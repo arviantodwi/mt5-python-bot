@@ -136,13 +136,59 @@ def test_shutdown_mt5_handles_exception(mock_print, mock_mt5):
 @patch("app.bot.healthcheck")
 @patch("app.bot.init_mt5")
 @patch("app.bot.shutdown_mt5")
-@patch("app.bot.time.sleep", side_effect=KeyboardInterrupt)
-def test_run_happy_path(mock_sleep, mock_shutdown, mock_init, mock_healthcheck, mock_clear):
+@patch("app.bot.mt5")
+@patch("app.bot.time.sleep", side_effect=[None, KeyboardInterrupt])
+@patch("app.bot.print")
+@patch("app.bot.datetime")
+def test_run_happy_path(
+    mock_datetime,
+    mock_print,
+    mock_sleep,
+    mock_mt5,
+    mock_shutdown,
+    mock_init,
+    mock_healthcheck,
+    mock_clear,
+):
     """Tests the main run function ensuring all setup and teardown functions are called."""
-    run()
+    # Arrange
+    mock_tick = MagicMock()
+    mock_tick.bid = 1.2345
+    mock_tick.ask = 1.235
+    mock_mt5.symbol_info_tick.return_value = mock_tick
+    mock_now = MagicMock()
+    mock_now.strftime.return_value = "12:34:56"
+    mock_datetime.now.return_value = mock_now
+    # mock_healthcheck.return_value = "Bot is healthy!"
 
+    with patch("app.bot.SYMBOL", "EURUSD"):
+        # Act
+        run()
+
+    # Assert
     mock_clear.assert_called_once()
     mock_healthcheck.assert_called_once()
     mock_init.assert_called_once()
-    mock_sleep.assert_called_once()
+    mock_mt5.symbol_info_tick.assert_any_call("EURUSD")
+
+    # Check print calls
+    # mock_print.assert_any_call("Bot is healthy!")
+    mock_print.assert_any_call("Start EURUSD rate polling.")
+
+    # Check for the tick print specifically
+    found_tick_print = False
+    for call in mock_print.call_args_list:
+        args, kwargs = call
+        if args and "Bid=" in args[0] and "Ask=" in args[0]:
+            found_tick_print = True
+            assert "12:34:56" in args[0]
+            assert "Bid=1.2345" in args[0]
+            assert "Ask=1.235" in args[0]
+            assert kwargs == {"end": "\r", "flush": True}
+            break
+    assert found_tick_print, "Tick print call not found"
+
+    mock_print.assert_any_call("", end="\n")
+
+    assert mock_sleep.call_count == 2
     mock_shutdown.assert_called_once()
