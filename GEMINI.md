@@ -26,8 +26,9 @@
 
 <!-- If you have specific coding rules, list them here. -->
 
-- **Imports:** Using import inside the function and at the top of it is preferred, unless the import will be used across functions.
-- **Comments:** Add comment to explain a function. Comments for code sequence can be added if they can explain more detail about the line.
+- **Imports:** Place imports inside functions or at the top of the file, depending on their scope. Use top-level imports only when they are shared across multiple functions.
+- **Comments:** Add docstring comments to describe each function’s purpose. Include inline comments when they help clarify complex logic or specific code behavior.
+- **Testing:** For any new code added to the `app` directory, write corresponding tests to maintain high test coverage and ensure reliability.
 
 ## 6. Current Goals
 
