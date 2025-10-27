@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -47,4 +48,8 @@ class Settings(BaseSettings):
     # Bot settings
     rate_polling_sec: int = Field(
         1, description="Time interval in seconds to poll for market rates. Optional. Default: 1."
+    )
+
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
+        "INFO", description="Logging level to show in file and console. Optional. Default: INFO"
     )

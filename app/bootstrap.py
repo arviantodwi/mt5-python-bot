@@ -16,7 +16,7 @@ def run() -> None:
     settings = Settings()  # type: ignore
 
     # Configure logging
-    setup_logging()
+    setup_logging(settings.log_level)
     logger.info("Bootstrapping bot...")
 
     mt5 = MT5Client(settings.account_user, settings.account_pass, settings.server_id, settings.terminal_path)
