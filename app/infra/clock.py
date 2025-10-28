@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import warnings
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Optional
@@ -153,13 +154,19 @@ def next_aligned_close(datetime: datetime, timeframe: int) -> datetime:
 
 def sleep_until(target: datetime) -> None:
     """
-    Sleep until local target time; safe if target is in the past (no-op).
+    Sleep until the given local target time; safe if target is in the past (no-op).
+    Falls back to JAKARTA_TZ if target has no ZoneInfo (e.g., fixed UTC offset).
     """
-    delay = (target - now_local(get_zoneinfo(target))).total_seconds()
+    tz = target.tzinfo if isinstance(target.tzinfo, ZoneInfo) else JAKARTA_TZ
+    delay = (target - now_local(tz)).total_seconds()
     if delay > 0:
         time.sleep(delay)
 
 
+@warnings.deprecated(
+    "Validating timezone using `isinstance()` should be preferred, for example: `tz = target.tzinfo if isinstance(target.tzinfo, ZoneInfo) else JAKARTA_TZ`.",
+    category=DeprecationWarning,
+)
 def get_zoneinfo(dt: datetime) -> Optional[ZoneInfo]:
     """
     Safely extracts the ZoneInfo object from a datetime object's tzinfo,
