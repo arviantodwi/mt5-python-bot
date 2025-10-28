@@ -26,7 +26,7 @@ class SchedulerService:
         on_candle_close(): callable with no args (it captures symbols/services)
         """
         while True:
-            now = now_local(JAKARTA_TZ)
+            now = now_local(self.window.tz)
 
             if not in_session(now, self.window):
                 start = next_session_start(now, self.window)
@@ -36,7 +36,7 @@ class SchedulerService:
                 continue
 
             # Inside session. Align to next 5-minute candle close, add small buffer, then call
-            target = next_aligned_close(now, self.timeframe).replace(second=0, microsecond=0)
+            target = next_aligned_close(now, self.timeframe)
             target_with_buff = target + timedelta(seconds=self.buffer_seconds)
             logger.debug(
                 "Sleeping until next {} candle close: {}".format(
