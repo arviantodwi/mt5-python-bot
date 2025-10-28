@@ -45,7 +45,7 @@ def run() -> None:
 
         # Enable session-aware scheduler service
         window = SessionWindow(start_hour=7, end_hour=4, tz=JAKARTA_TZ)
-        scheduler = SchedulerService(window=window, buffer_seconds=1.0)
+        scheduler = SchedulerService(window=window, timeframe=settings.timeframe, buffer_seconds=1.0)
 
         logger.info("Bootstrap complete.")
         logger.info(
