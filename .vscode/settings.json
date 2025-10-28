@@ -4,5 +4,11 @@
         "tests"
     ],
     "python.testing.unittestEnabled": false,
-    "python.testing.pytestEnabled": true
+    "python.testing.pytestEnabled": true,
+    "logViewer.watch": [
+        {
+            "title": "App Log",
+            "pattern": "./logs/*.log"
+        },
+    ]
 }

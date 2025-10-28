@@ -12,11 +12,11 @@ def setup_logging(level: str = "INFO", logs_dir: str = "logs") -> None:
             "disable_existing_loggers": False,
             "formatters": {
                 "default": {
-                    "format": "%(asctime)s | %(name)s | %(levelname)s | %(message)s",
+                    "format": "%(asctime)s | %(name)-27s | %(levelname)-8s | %(message)s",
                     "datefmt": "%Y-%m-%d %H:%M:%S",
                 },
                 "compact": {
-                    "format": "%(asctime)s | %(levelname)s | %(message)s",
+                    "format": "%(asctime)s | %(levelname)-8s | %(message)s",
                     "datefmt": "%H:%M:%S",
                 },
             },
