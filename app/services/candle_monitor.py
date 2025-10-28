@@ -8,8 +8,8 @@ from app.infra.logging import logging
 
 logger = logging.getLogger(__name__)
 
-MAX_SYNC_RETRIES = 3
-SYNC_SLEEP_SEC = 0.2
+MAX_SYNC_RETRIES = 4
+SYNC_SLEEP_SEC = 0.5
 
 
 class CandleMonitorService:
