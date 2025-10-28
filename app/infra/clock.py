@@ -128,17 +128,27 @@ def next_session_start(dt: datetime, window: SessionWindow) -> datetime:
     return _next_weekday_start(dt, window)
 
 
-def next_m5_close(dt: datetime) -> datetime:
+def minutes_to_seconds(minutes: int) -> int:
+    return minutes * 60
+
+
+def next_aligned_close(datetime: datetime, timeframe: int) -> datetime:
     """
-    Given a local datetime, return the next 5-min boundary in local time.
-    If dt is exactly on boundary, returns the *next* one (future).
+    Given a local datetime and a timeframe (seconds), return the next bar-close
+    boundary in local time. If dt lies exactly on a boundary, returns the next one
+    (strictly future).
     """
-    rounded_min = (dt.minute // 5 + 1) * 5
-    if rounded_min >= 60:
-        base = dt.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
-    else:
-        base = dt.replace(minute=rounded_min, second=0, microsecond=0)
-    return base
+    if timeframe <= 0:
+        raise ValueError("timeframe must be greater than 0")
+
+    timeframe_sec = minutes_to_seconds(timeframe)
+    day_start = datetime.replace(hour=0, minute=0, second=0, microsecond=0)
+    elapsed = int((datetime - day_start).total_seconds())
+    remainder = elapsed % timeframe_sec
+    delta = timeframe_sec - remainder if remainder != 0 else timeframe_sec
+    target = day_start + timedelta(seconds=elapsed + delta)
+
+    return target.replace(microsecond=0)
 
 
 def sleep_until(target: datetime) -> None:

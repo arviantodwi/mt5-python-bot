@@ -4,7 +4,7 @@ from app.infra.clock import (
     JAKARTA_TZ,
     SessionWindow,
     in_session,
-    next_m5_close,
+    next_aligned_close,
     next_session_start,
     now_local,
     sleep_until,
@@ -42,7 +42,7 @@ class SchedulerService:
                 continue
 
             # Inside session. Align to next 5-minute candle close, add small buffer, then call
-            target = next_m5_close(now).replace(second=0, microsecond=0)
+            target = next_aligned_close(now, self.timeframe).replace(second=0, microsecond=0)
             target_with_buff = target + timedelta(seconds=self.buffer_seconds)
             logger.debug(
                 f"Sleeping until next {self._humanize_timeframe(self.timeframe)} candle close: {target_with_buff.strftime('%Y-%m-%d %H:%M:%S')}"
