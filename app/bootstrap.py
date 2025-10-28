@@ -47,19 +47,19 @@ def run() -> None:
         window = SessionWindow(start_hour=7, end_hour=4, tz=JAKARTA_TZ)
         scheduler = SchedulerService(window=window, timeframe=settings.timeframe, buffer_seconds=1.0)
 
+        # Callback for scheduler
+        def on_candle_close():
+            monitor.process_symbol(settings.symbol)
+
         logger.info("Bootstrap complete.")
+
+        # Run forever, scheduler will automatically handle sleep/session timing
         logger.info(
             "Starting scheduler: active Mon to Fri %02d:00 to %02d:00 (%s)",
             window.start_hour,
             window.end_hour,
             window.tz.key,
         )
-
-        # Callback for scheduler
-        def on_candle_close():
-            monitor.process_symbol(settings.symbol)
-
-        # Run forever, scheduler will automatically handle sleep/session timing
         scheduler.run_forever(on_candle_close)
 
     except Exception as e:

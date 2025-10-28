@@ -3,6 +3,7 @@ from typing import Dict
 
 from app.adapters.mt5_client import MT5Client
 from app.domain.models import Candle
+from app.infra.clock import minutes_to_seconds
 from app.infra.logging import logging
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,7 @@ class CandleMonitorService:
     def __init__(self, mt5: MT5Client, timeframe: int, bootstrap_mode: bool = True, bootstrap_bars: int = 1) -> None:
         self._mt5 = mt5
         self._timeframe = timeframe
-        self._timeframe_sec = timeframe * 60
+        self._timeframe_sec = minutes_to_seconds(timeframe)
         self._last_seen_epoch: Dict[str, int] = {}  # symbol -> epoch seconds of last processed CLOSED bar
         self._bootstrap_mode = bootstrap_mode
         self._bootstrap_bars = max(1, bootstrap_bars)
@@ -85,7 +86,7 @@ class CandleMonitorService:
                 # Minimal sync loop to allow MT5 to hydrate the very-latest bar
                 prev_epoch = seen
                 for i in range(MAX_SYNC_RETRIES):
-                    logger.debug(f"Last closed candle hasn't hydrated yet. Attempting retry: `{i + 1}`.")
+                    logger.debug(f"Last closed candle hasn't hydrated yet. Attempting retry: {i + 1}.")
 
                     time.sleep(SYNC_SLEEP_SEC)
                     latest2 = self._mt5.get_last_closed_candle(symbol, self._timeframe)
@@ -147,6 +148,18 @@ class CandleMonitorService:
             logger.exception(f"Monitor error for {symbol}: {e}")
 
     def _log_candle(self, symbol: str, candle: Candle) -> None:
+        meta = self._mt5.get_symbol_meta(symbol)
+        digits = meta.digits
+
         logger.info(
-            f"Candle {symbol} {candle.time_utc.strftime('%Y-%m-%d %H:%M:%S')} closed | O={candle.open} H={candle.high} L={candle.low} C={candle.close} Volume={candle.volume}"
+            "Candle {} {} closed | O={:.{n}f} H={:.{n}f} L={:.{n}f} C={:.{n}f} Volume={:.2f}".format(
+                symbol,
+                candle.time_utc.strftime("%Y-%m-%d %H:%M:%S"),
+                candle.open,
+                candle.high,
+                candle.low,
+                candle.close,
+                candle.volume,
+                n=digits,
+            )
         )
