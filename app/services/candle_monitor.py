@@ -1,11 +1,14 @@
-from typing import Dict, Optional, Tuple
+import time
+from typing import Dict
 
 from app.adapters.mt5_client import MT5Client
 from app.domain.models import Candle
-from app.infra.clock import JAKARTA_TZ
 from app.infra.logging import logging
 
 logger = logging.getLogger(__name__)
+
+MAX_SYNC_RETRIES = 3
+SYNC_SLEEP_SEC = 0.2
 
 
 class CandleMonitorService:
@@ -27,13 +30,17 @@ class CandleMonitorService:
     def process_symbol(self, symbol: str) -> None:
         # TODO Implement feature to process multi symbols
         try:
-            last_two = self._mt5.get_last_closed_candle(symbol, self._timeframe)
-            if not last_two:
+            seen = self._last_seen_epoch.get(symbol)
+
+            def fetch_latest() -> tuple[int, Candle] | None:
+                return self._mt5.get_last_closed_candle(symbol, self._timeframe)
+
+            latest = fetch_latest()
+            if not latest:
                 logger.warning(f"No closed candle available for {symbol}")
                 return
 
-            last_closed_epoch, last_closed = last_two
-            seen = self._last_seen_epoch.get(symbol)
+            last_closed_epoch, last_closed = latest
 
             # First run for this symbol
             if seen is None:
@@ -52,25 +59,89 @@ class CandleMonitorService:
                 else:
                     # Option B: just set the pointer; do not emit historical logs
                     self._last_seen_epoch[symbol] = last_closed_epoch
+
+                # Stabilize history right now (extra pulls if MT5 loads more)
+                prev_epoch = last_closed_epoch
+                for _ in range(MAX_SYNC_RETRIES):
+                    time.sleep(SYNC_SLEEP_SEC)
+                    latest2 = fetch_latest()
+                    if not latest2:
+                        break
+                    new_epoch, _ = latest2
+                    if new_epoch <= prev_epoch:
+                        break
+                    # Process the newly available span (prev_epoch, new_epoch]
+                    backfill2 = self._mt5.get_backfill_candles(
+                        symbol, self._timeframe, since_exclusive_epoch=prev_epoch, until_inclusive_epoch=new_epoch
+                    )
+                    for bar in backfill2:
+                        self._log_candle(symbol, bar)
+                        self._last_seen_epoch[symbol] = int(bar.time_utc.timestamp())
+                    prev_epoch = new_epoch
                 return
 
             # Already up-to-date
             if last_closed_epoch <= seen:
+                # Minimal sync loop to allow MT5 to hydrate the very-latest bar
+                prev_epoch = seen
+                for i in range(MAX_SYNC_RETRIES):
+                    logger.debug(f"Last closed candle hasn't hydrated yet. Attempting retry: `{i + 1}`.")
+
+                    time.sleep(SYNC_SLEEP_SEC)
+                    latest2 = self._mt5.get_last_closed_candle(symbol, self._timeframe)
+                    if not latest2:
+                        break
+
+                    new_epoch, new_last_closed = latest2
+                    if new_epoch > prev_epoch:
+                        # We have a newer closed bar now → backfill the gap
+                        backfill2 = self._mt5.get_backfill_candles(
+                            symbol, self._timeframe, since_exclusive_epoch=prev_epoch, until_inclusive_epoch=new_epoch
+                        )
+                        if backfill2:
+                            for bar in backfill2:
+                                self._log_candle(symbol, bar)
+                                self._last_seen_epoch[symbol] = int(bar.time_utc.timestamp())
+                        else:
+                            # At least process the newly closed bar
+                            self._log_candle(symbol, new_last_closed)
+                            self._last_seen_epoch[symbol] = new_epoch
+                        break
+                # Either we processed the newly appeared bar(s) or nothing changed—return.
                 return
 
             # One or more bars missing → backfill them in order
             backfill = self._mt5.get_backfill_candles(
                 symbol, self._timeframe, since_exclusive_epoch=seen, until_inclusive_epoch=last_closed_epoch
             )
-            if not backfill:
+            if backfill:
+                for candle in backfill:
+                    self._log_candle(symbol, candle)
+                    self._last_seen_epoch[symbol] = int(candle.time_utc.timestamp())
+            else:
                 # Fallback: process last_closed at least
                 self._log_candle(symbol, last_closed)
                 self._last_seen_epoch[symbol] = last_closed_epoch
-                return
 
-            for candle in backfill:
-                self._log_candle(symbol, candle)
-                self._last_seen_epoch[symbol] = int(candle.time_utc.timestamp())
+            # Stabilize: MT5 may expose still more history immediately after
+            prev_epoch = self._last_seen_epoch[symbol]
+            for _ in range(MAX_SYNC_RETRIES):
+                time.sleep(SYNC_SLEEP_SEC)
+                latest2 = fetch_latest()
+                if not latest2:
+                    break
+                new_epoch, _ = latest2
+                if new_epoch <= prev_epoch:
+                    break
+                backfill2 = self._mt5.get_backfill_candles(
+                    symbol, self._timeframe, since_exclusive_epoch=prev_epoch, until_inclusive_epoch=new_epoch
+                )
+                if not backfill2:
+                    break
+                for bar in backfill2:
+                    self._log_candle(symbol, bar)
+                    self._last_seen_epoch[symbol] = int(bar.time_utc.timestamp())
+                prev_epoch = self._last_seen_epoch[symbol]
 
         except Exception as e:
             logger.exception(f"Monitor error for {symbol}: {e}")

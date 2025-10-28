@@ -21,6 +21,7 @@ class SchedulerService:
         - wakes just after each 5-minute candle close (1s buffer added here)
         - calls a user-provided "on_tick" callable
     """
+
     def __init__(self, window: SessionWindow, buffer_seconds: float = 1.0) -> None:
         self.window = window
         self.buffer_seconds = buffer_seconds
@@ -36,6 +37,7 @@ class SchedulerService:
                 start = next_session_start(now, self.window)
                 logger.info(f"Out of session. Sleeping until next session start: {start.strftime('%Y-%m-%d %H:%M:%S')}")
                 sleep_until(start)
+                logger.info(f"Start of today's session: {start.strftime('%Y-%m-%d %H:%M:%S')}")
                 continue
 
             # Inside session. Align to next 5-minute candle close, add small buffer, then call
