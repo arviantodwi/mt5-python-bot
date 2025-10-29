@@ -1,15 +1,14 @@
 import logging
 import time
-from typing import Dict
+from datetime import timedelta
+from typing import List, Optional
 
 from app.adapters.mt5_client import MT5Client
 from app.domain.models import Candle
+from app.infra.clock import JAKARTA_TZ, now_local
 from app.infra.timeframe import timeframe_to_seconds
 
 logger = logging.getLogger(__name__)
-
-MAX_SYNC_RETRIES = 4
-SYNC_SLEEP_SEC = 0.5
 
 
 class CandleMonitorService:
@@ -20,28 +19,38 @@ class CandleMonitorService:
         - Pure monitoring: logs bar summaries; no signals/trades here.
     """
 
-    def __init__(self, mt5: MT5Client, bootstrap_mode: bool = True, bootstrap_bars: int = 1) -> None:
+    def __init__(self, mt5: MT5Client, symbol: str, bootstrap_mode: bool = True, bootstrap_bars: int = 1) -> None:
         self._mt5 = mt5
         self._timeframe_sec = timeframe_to_seconds(mt5.timeframe)
-        self._last_seen_epoch: Dict[str, int] = {}  # symbol -> epoch seconds of last processed CLOSED bar
         self._bootstrap_mode = bootstrap_mode
         self._bootstrap_bars = max(1, bootstrap_bars)
+        self._symbol = symbol
+        self._symbol_digits: Optional[int] = None
+        self._last_seen_epoch: Optional[int] = None  # epoch seconds of last processed CLOSED candle
 
-    def process_symbol(self, symbol: str) -> None:
-        # TODO Implement feature to process multi symbols
+    def process_once(self) -> None:
+        self._process_symbol(self._symbol)
+
+    # TODO Implement feature to process multi symbols
+    def _process_symbol(self, symbol: str) -> None:
+        MAX_SYNC_RETRIES = 3
+        SYNC_SLEEP_SEC = 1
+
+        def fetch_latest() -> Optional[tuple[int, Candle]]:
+            last_candle = self._mt5.get_last_closed_candle(symbol)
+            return None if not last_candle else (last_candle.epoch, last_candle)
+
+        latest = fetch_latest()
+        if not latest:
+            logger.warning(f"No closed candle available for {symbol}")
+            return
+
+        last_closed_epoch, last_closed = latest
+
+        seen = self._last_seen_epoch
+
+        # TODO Persist last seen so bot can recover from restart
         try:
-            seen = self._last_seen_epoch.get(symbol)
-
-            def fetch_latest() -> tuple[int, Candle] | None:
-                return self._mt5.get_last_closed_candle(symbol)
-
-            latest = fetch_latest()
-            if not latest:
-                logger.warning(f"No closed candle available for {symbol}")
-                return
-
-            last_closed_epoch, last_closed = latest
-
             # First run for this symbol
             if seen is None:
                 if self._bootstrap_mode:
@@ -50,61 +59,83 @@ class CandleMonitorService:
                     backfill = self._mt5.get_backfill_candles(
                         symbol, since_exclusive_epoch=start_epoch - 1, until_inclusive_epoch=last_closed_epoch
                     )
+                    self._warn_if_irregular_spacing(backfill)
+
                     for candle in backfill:
                         self._log_candle(symbol, candle)
-                        self._last_seen_epoch[symbol] = int(candle.time_utc.timestamp())
+                        self._last_seen_epoch = candle.epoch
                 else:
                     # Option B: just set the pointer; do not emit historical logs
-                    self._last_seen_epoch[symbol] = last_closed_epoch
+                    self._last_seen_epoch = last_closed_epoch
 
-                # Stabilize history right now (extra pulls if MT5 loads more)
-                prev_epoch = last_closed_epoch
-                for _ in range(MAX_SYNC_RETRIES):
+                # Stabilize (initial hydration may stream more right away).
+                # Minimal sync loop applied to allow MT5 to hydrate the very-latest bar.
+                prev_epoch = self._last_seen_epoch
+
+                for i in range(MAX_SYNC_RETRIES):
+                    # logger.debug("Last closed candle hasn't hydrated yet (seen=%s). Retry #%d", prev_epoch, i + 1)
+
                     time.sleep(SYNC_SLEEP_SEC)
-                    latest2 = fetch_latest()
-                    if not latest2:
+
+                    latest_to_fill = fetch_latest()
+                    if not latest_to_fill:
                         break
-                    new_epoch, _ = latest2
-                    if new_epoch <= prev_epoch:
+
+                    new_epoch, _ = latest_to_fill
+
+                    if prev_epoch is None or new_epoch > prev_epoch:
+                        # Process the newly available span (prev_epoch, new_epoch]
+                        backfill_for_span = self._mt5.get_backfill_candles(
+                            symbol,
+                            since_exclusive_epoch=prev_epoch or (new_epoch - self._timeframe_sec),
+                            until_inclusive_epoch=new_epoch,
+                        )
+                        self._warn_if_irregular_spacing(backfill_for_span)
+
+                        for candle in backfill_for_span:
+                            self._log_candle(symbol, candle)
+                            self._last_seen_epoch = candle.epoch
+
+                    # Break immediately after extending
+                    if self._last_seen_epoch and new_epoch == self._last_seen_epoch:
                         break
-                    # Process the newly available span (prev_epoch, new_epoch]
-                    backfill2 = self._mt5.get_backfill_candles(
-                        symbol, since_exclusive_epoch=prev_epoch, until_inclusive_epoch=new_epoch
-                    )
-                    for bar in backfill2:
-                        self._log_candle(symbol, bar)
-                        self._last_seen_epoch[symbol] = int(bar.time_utc.timestamp())
-                    prev_epoch = new_epoch
+
                 return
 
-            # Already up-to-date
+            # Already up-to-date or terminal hasn't exposed new bar yet.
+            # Minimal sync loop applied to allow MT5 to hydrate the very-latest bar.
             if last_closed_epoch <= seen:
-                # Minimal sync loop to allow MT5 to hydrate the very-latest bar
                 prev_epoch = seen
+
                 for i in range(MAX_SYNC_RETRIES):
-                    logger.debug(f"Last closed candle hasn't hydrated yet. Attempting retry: {i + 1}.")
+                    logger.debug("Last closed candle hasn't hydrated yet (seen=%s). Retry #%d", prev_epoch, i + 1)
 
                     time.sleep(SYNC_SLEEP_SEC)
-                    latest2 = self._mt5.get_last_closed_candle(symbol)
-                    if not latest2:
+
+                    latest_to_fill = fetch_latest()
+                    if not latest_to_fill:
                         break
 
-                    new_epoch, new_last_closed = latest2
+                    new_epoch, new_last_closed = latest_to_fill
+
                     if new_epoch > prev_epoch:
-                        # We have a newer closed bar now → backfill the gap
-                        backfill2 = self._mt5.get_backfill_candles(
+                        # We have a newer closed bar now -> backfill the gap
+                        backfill = self._mt5.get_backfill_candles(
                             symbol, since_exclusive_epoch=prev_epoch, until_inclusive_epoch=new_epoch
                         )
-                        if backfill2:
-                            for bar in backfill2:
-                                self._log_candle(symbol, bar)
-                                self._last_seen_epoch[symbol] = int(bar.time_utc.timestamp())
+                        self._warn_if_irregular_spacing(backfill)
+
+                        if backfill:
+                            for candle in backfill:
+                                self._log_candle(symbol, candle)
+                                self._last_seen_epoch = candle.epoch
                         else:
                             # At least process the newly closed bar
                             self._log_candle(symbol, new_last_closed)
-                            self._last_seen_epoch[symbol] = new_epoch
+                            self._last_seen_epoch = new_epoch
+
                         break
-                # Either we processed the newly appeared bar(s) or nothing changed—return.
+
                 return
 
             # One or more bars missing → backfill them in order
@@ -112,50 +143,49 @@ class CandleMonitorService:
                 symbol, since_exclusive_epoch=seen, until_inclusive_epoch=last_closed_epoch
             )
             if backfill:
+                self._warn_if_irregular_spacing(backfill)
+
                 for candle in backfill:
                     self._log_candle(symbol, candle)
-                    self._last_seen_epoch[symbol] = int(candle.time_utc.timestamp())
+                    self._last_seen_epoch = candle.epoch
             else:
                 # Fallback: process last_closed at least
                 self._log_candle(symbol, last_closed)
-                self._last_seen_epoch[symbol] = last_closed_epoch
-
-            # Stabilize: MT5 may expose still more history immediately after
-            prev_epoch = self._last_seen_epoch[symbol]
-            for _ in range(MAX_SYNC_RETRIES):
-                time.sleep(SYNC_SLEEP_SEC)
-                latest2 = fetch_latest()
-                if not latest2:
-                    break
-                new_epoch, _ = latest2
-                if new_epoch <= prev_epoch:
-                    break
-                backfill2 = self._mt5.get_backfill_candles(
-                    symbol, since_exclusive_epoch=prev_epoch, until_inclusive_epoch=new_epoch
-                )
-                if not backfill2:
-                    break
-                for bar in backfill2:
-                    self._log_candle(symbol, bar)
-                    self._last_seen_epoch[symbol] = int(bar.time_utc.timestamp())
-                prev_epoch = self._last_seen_epoch[symbol]
+                self._last_seen_epoch = last_closed_epoch
 
         except Exception as e:
             logger.exception(f"Monitor error for {symbol}: {e}")
 
     def _log_candle(self, symbol: str, candle: Candle) -> None:
-        meta = self._mt5.get_symbol_meta(symbol)
-        digits = meta.digits
+        if self._symbol_digits is None:
+            self._symbol_digits = self._mt5.get_symbol_meta(symbol).digits
+
+        server_open_time = candle.time_utc
+        local_open_time = server_open_time.astimezone(JAKARTA_TZ) - timedelta(hours=2)
+
+        d = self._symbol_digits
+        ohlc_format = f"%.{d}f"
+        open = ohlc_format % candle.open
+        high = ohlc_format % candle.high
+        low = ohlc_format % candle.low
+        close = ohlc_format % candle.close
+        volume = candle.volume
 
         logger.info(
-            "Candle {} {} closed | O={:.{n}f} H={:.{n}f} L={:.{n}f} C={:.{n}f} Volume={:.2f}".format(
+            "Candle {} {} (server: {}) closed | O={} H={} L={} C={} Volume={}".format(
                 symbol,
-                candle.time_utc.strftime("%Y-%m-%d %H:%M:%S"),
-                candle.open,
-                candle.high,
-                candle.low,
-                candle.close,
-                candle.volume,
-                n=digits,
+                local_open_time.strftime("%Y-%m-%d %H:%M:%S"),
+                server_open_time.strftime("%Y-%m-%d %H:%M:%S"),
+                open,
+                high,
+                low,
+                close,
+                volume,
             )
         )
+
+    def _warn_if_irregular_spacing(self, candles: List[Candle]) -> None:
+        if len(candles) > 1:
+            step = int((candles[1].time_utc - candles[0].time_utc).total_seconds())
+            if step != self._timeframe_sec:
+                logger.warning("Irregular bar spacing (expected %s seconds): %s", self._timeframe_sec, step)

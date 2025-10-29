@@ -7,6 +7,7 @@ from datetime import datetime
 @dataclass(frozen=True)
 class Candle:
     time_utc: datetime
+    epoch: int
     open: float
     high: float
     low: float
