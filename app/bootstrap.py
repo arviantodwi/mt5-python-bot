@@ -27,6 +27,9 @@ def run() -> None:
         mt5 = MT5Client(settings.account_user, settings.account_pass, settings.server_id, settings.terminal_path)
         mt5.initialize()
 
+        # Ensure timeframe support
+        mt5.ensure_timeframe(settings.timeframe)
+
         # Ensure symbol selected
         # TODO Implement feature to process multi symbols
         mt5.ensure_symbol_selected(settings.symbol)
@@ -35,17 +38,19 @@ def run() -> None:
             f"Symbol ready: {meta.name} (digits={meta.digits}, tick_size={meta.tick_size:.{meta.digits}f}, tick_value={meta.tick_value}, lot_step={meta.lot_step}, min_lot={meta.min_lot}, stops_level={meta.stops_level}, freeze_level={meta.freeze_level})"
         )
 
+        # Nudge the terminal to hydrate history faster at session open
+        mt5.prime_history(settings.symbol, count=1500)
+
         # Enable candle monitoring service
         monitor = CandleMonitorService(
             mt5,
-            settings.timeframe,
             bootstrap_mode=True,  # log recent bars at startup
             bootstrap_bars=10,  # you can increase to, say, 3 for a small warmup
         )
 
         # Enable session-aware scheduler service
         window = SessionWindow(start_hour=7, end_hour=4, tz=JAKARTA_TZ)
-        scheduler = SchedulerService(window=window, timeframe=settings.timeframe, buffer_seconds=1.0)
+        scheduler = SchedulerService(window=window, timeframe=mt5.timeframe, buffer_seconds=1.0)
 
         # Callback for scheduler
         def on_candle_close():
