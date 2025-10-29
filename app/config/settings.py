@@ -45,6 +45,14 @@ class Settings(BaseSettings):
 
     timeframe: int = Field(5, description="Candlestick timeframe in minutes. Optional. Default: 5.")
 
+    session_start_hour: int = Field(
+        7, description="Session window start in local time (24 hour). Optional. Default: 7."
+    )
+
+    session_end_hour: int = Field(
+        3, description="Session window end in local time (24 hour). Can be overnight. Optional. Default: 3."
+    )
+
     # Bot settings
     rate_polling_sec: int = Field(
         1, description="Time interval in seconds to poll for market rates. Optional. Default: 1."

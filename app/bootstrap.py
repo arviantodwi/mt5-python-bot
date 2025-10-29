@@ -50,7 +50,9 @@ def run() -> None:
         )
 
         # Enable session-aware scheduler service
-        window = SessionWindow(start_hour=7, end_hour=4, tz=JAKARTA_TZ)
+        window = SessionWindow(
+            start_hour=settings.session_start_hour, end_hour=settings.session_end_hour, tz=JAKARTA_TZ
+        )
         scheduler = SchedulerService(window=window, timeframe=mt5.timeframe, buffer_seconds=1.0)
 
         # Callback for scheduler
