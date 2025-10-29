@@ -3,7 +3,8 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 
-from app.infra.clock import SessionWindow, in_session, next_aligned_close, next_session_start, now_local, sleep_until
+from app.infra.clock import SessionWindow, in_session, next_session_start, now_local, sleep_until
+from app.infra.timeframe import humanize_timeframe, next_aligned_close
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +41,7 @@ class SchedulerService:
             target_with_buff = target + timedelta(seconds=self.buffer_seconds)
             logger.debug(
                 "Sleeping until next {} candle close: {}".format(
-                    self._humanize_timeframe(self.timeframe), target_with_buff.strftime("%Y-%m-%d %H:%M:%S")
+                    humanize_timeframe(self.timeframe), target_with_buff.strftime("%Y-%m-%d %H:%M:%S")
                 )
             )
             sleep_until(target_with_buff)
@@ -49,36 +50,3 @@ class SchedulerService:
                 on_candle_close()
             except Exception as e:
                 logger.exception(f"on_candle_close failed: {e}")
-
-    def _humanize_timeframe(self, minutes: int) -> str:
-        """
-        Converts an integer representing minutes into a human-readable,
-        hyphenated string format (e.g., "5-minute", "1-hour", "2-day").
-
-        Args:
-            minutes: The duration in minutes.
-
-        Returns:
-            A formatted string.
-        """
-        if minutes <= 0:
-            return "invalid-duration"
-
-        # Define constants for clarity
-        MINUTES_IN_HOUR = 60
-        MINUTES_IN_DAY = MINUTES_IN_HOUR * 24  # 1440
-
-        if minutes % MINUTES_IN_DAY == 0:
-            # Check for days. We check if it's perfectly divisible by MINUTES_IN_DAY.
-            value = minutes // MINUTES_IN_DAY
-            unit = "day"
-        elif minutes % MINUTES_IN_HOUR == 0:
-            # Check for hours. We check if it's perfectly divisible by MINUTES_IN_HOUR.
-            value = minutes // MINUTES_IN_HOUR
-            unit = "hour"
-        else:
-            # Default to minutes
-            value = minutes
-            unit = "minute"
-
-        return f"{value}-{unit}"

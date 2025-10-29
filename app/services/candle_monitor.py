@@ -3,8 +3,8 @@ from typing import Dict
 
 from app.adapters.mt5_client import MT5Client
 from app.domain.models import Candle
-from app.infra.clock import minutes_to_seconds
 from app.infra.logging import logging
+from app.infra.timeframe import timeframe_to_seconds
 
 logger = logging.getLogger(__name__)
 
@@ -20,10 +20,9 @@ class CandleMonitorService:
         - Pure monitoring: logs bar summaries; no signals/trades here.
     """
 
-    def __init__(self, mt5: MT5Client, timeframe: int, bootstrap_mode: bool = True, bootstrap_bars: int = 1) -> None:
+    def __init__(self, mt5: MT5Client, bootstrap_mode: bool = True, bootstrap_bars: int = 1) -> None:
         self._mt5 = mt5
-        self._timeframe = timeframe
-        self._timeframe_sec = minutes_to_seconds(timeframe)
+        self._timeframe_sec = timeframe_to_seconds(mt5.timeframe)
         self._last_seen_epoch: Dict[str, int] = {}  # symbol -> epoch seconds of last processed CLOSED bar
         self._bootstrap_mode = bootstrap_mode
         self._bootstrap_bars = max(1, bootstrap_bars)
@@ -34,7 +33,7 @@ class CandleMonitorService:
             seen = self._last_seen_epoch.get(symbol)
 
             def fetch_latest() -> tuple[int, Candle] | None:
-                return self._mt5.get_last_closed_candle(symbol, self._timeframe)
+                return self._mt5.get_last_closed_candle(symbol)
 
             latest = fetch_latest()
             if not latest:
@@ -49,10 +48,7 @@ class CandleMonitorService:
                     # Option A: process a tiny bootstrap window (1..N bars) ending at last_closed
                     start_epoch = last_closed_epoch - (self._bootstrap_bars - 1) * self._timeframe_sec
                     backfill = self._mt5.get_backfill_candles(
-                        symbol,
-                        self._timeframe,
-                        since_exclusive_epoch=start_epoch - 1,
-                        until_inclusive_epoch=last_closed_epoch,
+                        symbol, since_exclusive_epoch=start_epoch - 1, until_inclusive_epoch=last_closed_epoch
                     )
                     for candle in backfill:
                         self._log_candle(symbol, candle)
@@ -73,7 +69,7 @@ class CandleMonitorService:
                         break
                     # Process the newly available span (prev_epoch, new_epoch]
                     backfill2 = self._mt5.get_backfill_candles(
-                        symbol, self._timeframe, since_exclusive_epoch=prev_epoch, until_inclusive_epoch=new_epoch
+                        symbol, since_exclusive_epoch=prev_epoch, until_inclusive_epoch=new_epoch
                     )
                     for bar in backfill2:
                         self._log_candle(symbol, bar)
@@ -89,7 +85,7 @@ class CandleMonitorService:
                     logger.debug(f"Last closed candle hasn't hydrated yet. Attempting retry: {i + 1}.")
 
                     time.sleep(SYNC_SLEEP_SEC)
-                    latest2 = self._mt5.get_last_closed_candle(symbol, self._timeframe)
+                    latest2 = self._mt5.get_last_closed_candle(symbol)
                     if not latest2:
                         break
 
@@ -97,7 +93,7 @@ class CandleMonitorService:
                     if new_epoch > prev_epoch:
                         # We have a newer closed bar now → backfill the gap
                         backfill2 = self._mt5.get_backfill_candles(
-                            symbol, self._timeframe, since_exclusive_epoch=prev_epoch, until_inclusive_epoch=new_epoch
+                            symbol, since_exclusive_epoch=prev_epoch, until_inclusive_epoch=new_epoch
                         )
                         if backfill2:
                             for bar in backfill2:
@@ -113,7 +109,7 @@ class CandleMonitorService:
 
             # One or more bars missing → backfill them in order
             backfill = self._mt5.get_backfill_candles(
-                symbol, self._timeframe, since_exclusive_epoch=seen, until_inclusive_epoch=last_closed_epoch
+                symbol, since_exclusive_epoch=seen, until_inclusive_epoch=last_closed_epoch
             )
             if backfill:
                 for candle in backfill:
@@ -135,7 +131,7 @@ class CandleMonitorService:
                 if new_epoch <= prev_epoch:
                     break
                 backfill2 = self._mt5.get_backfill_candles(
-                    symbol, self._timeframe, since_exclusive_epoch=prev_epoch, until_inclusive_epoch=new_epoch
+                    symbol, since_exclusive_epoch=prev_epoch, until_inclusive_epoch=new_epoch
                 )
                 if not backfill2:
                     break

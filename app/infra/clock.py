@@ -129,29 +129,6 @@ def next_session_start(dt: datetime, window: SessionWindow) -> datetime:
     return _next_weekday_start(dt, window)
 
 
-def minutes_to_seconds(minutes: int) -> int:
-    return minutes * 60
-
-
-def next_aligned_close(datetime: datetime, timeframe: int) -> datetime:
-    """
-    Given a local datetime and a timeframe (seconds), return the next bar-close
-    boundary in local time. If dt lies exactly on a boundary, returns the next one
-    (strictly future).
-    """
-    if timeframe <= 0:
-        raise ValueError("timeframe must be greater than 0")
-
-    timeframe_sec = minutes_to_seconds(timeframe)
-    day_start = datetime.replace(hour=0, minute=0, second=0, microsecond=0)
-    elapsed = int((datetime - day_start).total_seconds())
-    remainder = elapsed % timeframe_sec
-    delta = timeframe_sec - remainder if remainder != 0 else timeframe_sec
-    target = day_start + timedelta(seconds=elapsed + delta)
-
-    return target.replace(microsecond=0)
-
-
 def sleep_until(target: datetime) -> None:
     """
     Sleep until the given local target time; safe if target is in the past (no-op).
