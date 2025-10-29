@@ -1,9 +1,9 @@
+import logging
 import time
 from typing import Dict
 
 from app.adapters.mt5_client import MT5Client
 from app.domain.models import Candle
-from app.infra.logging import logging
 from app.infra.timeframe import timeframe_to_seconds
 
 logger = logging.getLogger(__name__)
