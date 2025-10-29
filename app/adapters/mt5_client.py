@@ -4,7 +4,7 @@ import atexit
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 import mt5_wrapper as mt5
 
@@ -139,7 +139,7 @@ class MT5Client:
         except Exception:
             pass
 
-    def get_last_closed_candle(self, symbol: str) -> Optional[Tuple[int, Candle]]:
+    def get_last_closed_candle(self, symbol: str) -> Optional[Candle]:
         """
         Return the last CLOSED candle as Candle, or None if unavailable.
         Uses copy_rates_from_pos(symbol, timeframe, start_pos, count).
@@ -154,16 +154,15 @@ class MT5Client:
         epoch = int(last_closed["time"])  # MT5 gives POSIX seconds (UTC), already int
         time_utc = datetime.fromtimestamp(epoch, tz=timezone.utc)
 
-        candle = Candle(
+        return Candle(
             time_utc,
+            epoch,
             float(last_closed["open"]),
             float(last_closed["high"]),
             float(last_closed["low"]),
             float(last_closed["close"]),
             volume=float(last_closed["tick_volume"]),
         )
-
-        return epoch, candle
 
     def get_backfill_candles(self, symbol: str, since_exclusive_epoch: int, until_inclusive_epoch: int) -> List[Candle]:
         """
@@ -190,6 +189,7 @@ class MT5Client:
                 candles.append(
                     Candle(
                         time_utc,
+                        epoch,
                         float(rate["open"]),
                         float(rate["high"]),
                         float(rate["low"]),

@@ -44,6 +44,7 @@ def run() -> None:
         # Enable candle monitoring service
         monitor = CandleMonitorService(
             mt5,
+            settings.symbol,
             bootstrap_mode=True,  # log recent bars at startup
             bootstrap_bars=10,  # you can increase to, say, 3 for a small warmup
         )
@@ -54,7 +55,7 @@ def run() -> None:
 
         # Callback for scheduler
         def on_candle_close():
-            monitor.process_symbol(settings.symbol)
+            monitor.process_once()
 
         logger.info("Bootstrap complete.")
 
