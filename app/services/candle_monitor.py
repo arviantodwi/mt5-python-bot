@@ -185,7 +185,15 @@ class CandleMonitorService:
         )
 
     def _warn_if_irregular_spacing(self, candles: List[Candle]) -> None:
-        if len(candles) > 1:
-            step = int((candles[1].time_utc - candles[0].time_utc).total_seconds())
-            if step != self._timeframe_sec:
-                logger.warning("Irregular bar spacing (expected %s seconds): %s", self._timeframe_sec, step)
+        if len(candles) >= 2:
+            for a, b in zip(candles, candles[1:]):
+                step = int((b.time_utc - a.time_utc).total_seconds())
+                if step != self._timeframe_sec:
+                    logger.warning(
+                        "Irregular spacing between %s and %s: %s seconds (expected %s)",
+                        a.time_utc,
+                        b.time_utc,
+                        step,
+                        self._timeframe_sec,
+                    )
+                    break
