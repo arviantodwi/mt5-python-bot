@@ -9,6 +9,7 @@ from typing import List, Optional
 import mt5_wrapper as mt5
 
 from app.domain.models import Candle
+from app.infra.timeframe import humanize_mt5_timeframe
 
 from .mt5_utils import parse_mt5_version, with_mt5_error
 
@@ -100,7 +101,7 @@ class MT5Client:
         self._ensure_initialized()
         timeframe = self._tf_to_mt5(minutes)
         self.timeframe = timeframe
-        logger.debug(f"Timeframe ensured: {timeframe}")
+        logger.debug(f"Timeframe ensured: {humanize_mt5_timeframe(timeframe)}")
 
     def ensure_symbol_selected(self, symbol: str) -> None:
         self._ensure_initialized()
@@ -136,6 +137,7 @@ class MT5Client:
         self._ensure_initialized()
         try:
             mt5.copy_rates_from_pos(symbol, self.timeframe, 0, count)
+            logger.debug("History primed for %s (%d bars)", symbol, count)
         except Exception:
             pass
 

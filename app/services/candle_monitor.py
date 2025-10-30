@@ -5,7 +5,7 @@ from typing import List, Optional
 
 from app.adapters.mt5_client import MT5Client
 from app.domain.models import Candle
-from app.infra.clock import JAKARTA_TZ, now_local
+from app.infra.clock import JAKARTA_TZ
 from app.infra.timeframe import timeframe_to_seconds
 
 logger = logging.getLogger(__name__)
