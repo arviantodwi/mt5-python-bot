@@ -5,7 +5,9 @@ from app.config.settings import Settings
 from app.infra.clock import JAKARTA_TZ, SessionWindow
 from app.infra.logging import setup_logging
 from app.infra.terminal import clear_terminal
+from app.infra.timeframe import timeframe_to_seconds
 from app.services.candle_monitor import CandleMonitorService
+from app.services.indicators import IndicatorsService
 from app.services.scheduler import SchedulerService
 
 logger = logging.getLogger(__name__)
@@ -41,12 +43,28 @@ def run() -> None:
         # Nudge the terminal to hydrate history faster at session open
         mt5.prime_history(settings.symbol, count=1500)
 
+        # Enable indicator service
+        indicators = IndicatorsService(histogram_window=4)
+
+        # Seed indicators pack with recent bars so EMA200 & MACD histogram are ready from the first live bar
+        last = mt5.get_last_closed_candle(settings.symbol)
+        if last:
+            tf_sec = timeframe_to_seconds(mt5.timeframe)
+            since = last.epoch - 220 * tf_sec  # ~220 bars: enough for EMA200 seeding
+            recent = mt5.get_backfill_candles(
+                settings.symbol,
+                since_exclusive_epoch=since,
+                until_inclusive_epoch=last.epoch,
+            )
+            indicators.warmup_with_candles(recent)
+
         # Enable candle monitoring service
         monitor = CandleMonitorService(
             mt5,
             settings.symbol,
             bootstrap_mode=True,  # log small warmup
-            bootstrap_bars=10,
+            bootstrap_bars=1,
+            indicators=indicators,
         )
 
         # Enable session-aware scheduler service

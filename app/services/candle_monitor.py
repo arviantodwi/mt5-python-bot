@@ -7,6 +7,7 @@ from app.adapters.mt5_client import MT5Client
 from app.domain.models import Candle
 from app.infra.clock import JAKARTA_TZ
 from app.infra.timeframe import timeframe_to_seconds
+from app.services.indicators import IndicatorsService
 
 logger = logging.getLogger(__name__)
 
@@ -17,9 +18,17 @@ class CandleMonitorService:
         - Uses integer epoch seconds from MT5 (no float equality problems).
         - If multiple bars were missed, processes them oldest -> newest.
         - Pure monitoring: logs bar summaries; no signals/trades here.
+        - Optionally updates EMA200 and MACD(12,26,9) histogram via IndicatorsService.
     """
 
-    def __init__(self, mt5: MT5Client, symbol: str, bootstrap_mode: bool = True, bootstrap_bars: int = 1) -> None:
+    def __init__(
+        self,
+        mt5: MT5Client,
+        symbol: str,
+        bootstrap_mode: bool = True,
+        bootstrap_bars: int = 1,
+        indicators: Optional[IndicatorsService] = None,
+    ) -> None:
         self._mt5 = mt5
         self._timeframe_sec = timeframe_to_seconds(mt5.timeframe)
         self._bootstrap_mode = bootstrap_mode
@@ -27,6 +36,8 @@ class CandleMonitorService:
         self._symbol = symbol
         self._symbol_digits: Optional[int] = None
         self._last_seen_epoch: Optional[int] = None  # epoch seconds of last processed CLOSED candle
+        self._indicators = indicators
+        self._announced_ready = False  # guard to log a one-time "indicators ready" message
 
     def process_once(self) -> None:
         self._process_symbol(self._symbol)
@@ -64,6 +75,7 @@ class CandleMonitorService:
                     for candle in backfill:
                         self._log_candle(symbol, candle)
                         self._last_seen_epoch = candle.epoch
+                        self._update_indicators(candle)
                 else:
                     # Option B: just set the pointer; do not emit historical logs
                     self._last_seen_epoch = last_closed_epoch
@@ -95,6 +107,7 @@ class CandleMonitorService:
                         for candle in backfill_for_span:
                             self._log_candle(symbol, candle)
                             self._last_seen_epoch = candle.epoch
+                            self._update_indicators(candle)
 
                     # Break immediately after extending
                     if self._last_seen_epoch and new_epoch == self._last_seen_epoch:
@@ -129,10 +142,12 @@ class CandleMonitorService:
                             for candle in backfill:
                                 self._log_candle(symbol, candle)
                                 self._last_seen_epoch = candle.epoch
+                                self._update_indicators(candle)
                         else:
                             # At least process the newly closed bar
                             self._log_candle(symbol, new_last_closed)
                             self._last_seen_epoch = new_epoch
+                            self._update_indicators(new_last_closed)
 
                         break
 
@@ -148,10 +163,12 @@ class CandleMonitorService:
                 for candle in backfill:
                     self._log_candle(symbol, candle)
                     self._last_seen_epoch = candle.epoch
+                    self._update_indicators(candle)
             else:
                 # Fallback: process last_closed at least
                 self._log_candle(symbol, last_closed)
                 self._last_seen_epoch = last_closed_epoch
+                self._update_indicators(last_closed)
 
         except Exception as e:
             logger.exception(f"Monitor error for {symbol}: {e}")
@@ -161,6 +178,9 @@ class CandleMonitorService:
             self._symbol_digits = self._mt5.get_symbol_meta(symbol).digits
 
         server_open_time = candle.time_utc
+        # Subtract 2 hours for now. DON'T FIX IT YET. It will be fixed later by
+        # comparing the real UTC datetime to the server time and compute the offset.
+        # Then the offset will be used to normalizing the local time.
         local_open_time = server_open_time.astimezone(JAKARTA_TZ) - timedelta(hours=2)
 
         d = self._symbol_digits
@@ -197,3 +217,40 @@ class CandleMonitorService:
                         self._timeframe_sec,
                     )
                     break
+
+    def _update_indicators(self, candle: Candle) -> None:
+        """
+        Feed the just-processed CLOSED candle into the indicators pipeline and log readiness.
+        No trading decisions here, only pure telemetry, kept at DEBUG level when ready.
+        """
+        if self._indicators is None:
+            return
+
+        if self._symbol_digits is None:
+            self._symbol_digits = self._mt5.get_symbol_meta(self._symbol).digits
+
+        snap = self._indicators.on_closed_candle(candle)
+        if snap.ema200 is None or snap.histogram is None:
+            # Warming up: log remaining bars needed (kept at DEBUG to avoid noise).
+            logger.debug(
+                "Indicators warming | ema200_missing=%d macd_histogram_missing=%d",
+                snap.bars_until_ready_ema200,
+                snap.bars_until_ready_macd_histogram,
+            )
+            return
+
+        d = self._symbol_digits + 1
+        ema_format = f"%.{d}f"
+        macd_format = "%.6f"
+        log_prefix = "Indicators ready" if not self._announced_ready else "Indicators"
+        logger.info(
+            "{} | EMA200={} MACD={} Signal={} Histogram={}".format(
+                log_prefix,
+                ema_format % snap.ema200,
+                macd_format % snap.macd,
+                macd_format % snap.signal,
+                macd_format % snap.histogram,
+            ),
+        )
+        if not self._announced_ready:
+            self._announced_ready = True
