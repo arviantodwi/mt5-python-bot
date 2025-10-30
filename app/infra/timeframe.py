@@ -37,7 +37,7 @@ _TIMEFRAME_MAP = {
 }
 
 
-def humanize_timeframe(timeframe: int) -> str:
+def humanize_mt5_timeframe(timeframe: int) -> str:
     """
     Converts an MT5 timeframe constant (e.g., mt5.TIMEFRAME_H1)
     into a human-readable, hyphenated string (e.g., "1-hour").
@@ -71,9 +71,8 @@ def timeframe_to_seconds(timeframe: int) -> int:
 
 def next_aligned_close(datetime: datetime, timeframe: int) -> datetime:
     """
-    Given a local datetime and a timeframe (seconds), return the next bar-close
-    boundary in local time. If dt lies exactly on a boundary, returns the next one
-    (strictly future).
+    Given a local datetime and an MT5 timeframe constant (e.g., TIMEFRAME_M5),
+    return the next candle-close boundary.
     """
     if timeframe <= 0:
         raise ValueError("Timeframe must be greater than 0")

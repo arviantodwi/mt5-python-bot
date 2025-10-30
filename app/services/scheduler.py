@@ -4,7 +4,7 @@ import logging
 from datetime import timedelta
 
 from app.infra.clock import SessionWindow, in_session, next_session_start, now_local, sleep_until
-from app.infra.timeframe import humanize_timeframe, next_aligned_close
+from app.infra.timeframe import humanize_mt5_timeframe, next_aligned_close
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ class SchedulerService:
             target_with_buff = target + timedelta(seconds=self.buffer_seconds)
             logger.debug(
                 "Sleeping until next {} candle close: {}".format(
-                    humanize_timeframe(self.timeframe), target_with_buff.strftime("%Y-%m-%d %H:%M:%S")
+                    humanize_mt5_timeframe(self.timeframe), target_with_buff.strftime("%Y-%m-%d %H:%M:%S")
                 )
             )
             sleep_until(target_with_buff)

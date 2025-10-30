@@ -45,8 +45,8 @@ def run() -> None:
         monitor = CandleMonitorService(
             mt5,
             settings.symbol,
-            bootstrap_mode=True,  # log recent bars at startup
-            bootstrap_bars=10,  # you can increase to, say, 3 for a small warmup
+            bootstrap_mode=True,  # log small warmup
+            bootstrap_bars=10,
         )
 
         # Enable session-aware scheduler service
@@ -55,8 +55,9 @@ def run() -> None:
         )
         scheduler = SchedulerService(window=window, timeframe=mt5.timeframe, buffer_seconds=1.0)
 
-        # Callback for scheduler
+        # Callback for scheduler.
         def on_candle_close():
+            # Called once after each TF close within the session window.
             monitor.process_once()
 
         logger.info("Bootstrap complete.")
