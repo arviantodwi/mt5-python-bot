@@ -210,9 +210,9 @@ class CandleMonitorService:
                 step = int((b.time_utc - a.time_utc).total_seconds())
                 if step != self._timeframe_sec:
                     logger.warning(
-                        "Irregular spacing between %s and %s: %s seconds (expected %s)",
-                        a.time_utc,
-                        b.time_utc,
+                        "Irregular spacing (server time) between %s and %s: %s seconds (expected %s)",
+                        a.time_utc.strftime("%Y-%m-%d %H:%M:%S"),
+                        b.time_utc.strftime("%Y-%m-%d %H:%M:%S"),
                         step,
                         self._timeframe_sec,
                     )
