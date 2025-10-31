@@ -2,30 +2,17 @@ from __future__ import annotations
 
 import atexit
 import logging
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import List, Optional
 
 import mt5_wrapper as mt5
 
-from app.domain.models import Candle
+from app.domain.models import Candle, SymbolMeta
 from app.infra.timeframe import humanize_mt5_timeframe
 
 from .mt5_utils import parse_mt5_version, with_mt5_error
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class SymbolMeta:
-    name: str
-    digits: int
-    tick_size: float
-    tick_value: float
-    lot_step: float
-    min_lot: float
-    stops_level: int
-    freeze_level: int
 
 
 class MT5Client:
