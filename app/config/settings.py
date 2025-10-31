@@ -53,6 +53,11 @@ class Settings(BaseSettings):
         3, description="Session window end in local time (24 hour). Can be overnight. Optional. Default: 3."
     )
 
+    doji_ratio: float = Field(
+        0.1,
+        description="Ratio defining what constitutes a Doji candle. Optional. Default: 0.1.",
+    )
+
     # Bot settings
     rate_polling_sec: int = Field(
         1, description="Time interval in seconds to poll for market rates. Optional. Default: 1."

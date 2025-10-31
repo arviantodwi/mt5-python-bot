@@ -9,6 +9,7 @@ from app.infra.timeframe import timeframe_to_seconds
 from app.services.candle_monitor import CandleMonitorService
 from app.services.indicators import IndicatorsService
 from app.services.scheduler import SchedulerService
+from app.services.signal import SignalService
 
 logger = logging.getLogger(__name__)
 
@@ -58,13 +59,19 @@ def run() -> None:
             )
             indicators.warmup_with_candles(recent)
 
+        # Enable signal service
+        signals = SignalService(
+            symbol=settings.symbol, timeframe_minutes=settings.timeframe, doji_ratio=settings.doji_ratio
+        )
+
         # Enable candle monitoring service
         monitor = CandleMonitorService(
-            mt5,
-            settings.symbol,
+            mt5=mt5,
+            symbol=settings.symbol,
             bootstrap_mode=True,  # log small warmup
             bootstrap_bars=1,
             indicators=indicators,
+            signals=signals,
         )
 
         # Enable session-aware scheduler service

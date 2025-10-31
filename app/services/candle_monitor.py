@@ -4,10 +4,12 @@ from datetime import timedelta
 from typing import List, Optional
 
 from app.adapters.mt5_client import MT5Client
+from app.domain.indicators import IndicatorsSnapshot
 from app.domain.models import Candle
 from app.infra.clock import JAKARTA_TZ
 from app.infra.timeframe import timeframe_to_seconds
 from app.services.indicators import IndicatorsService
+from app.services.signal import SignalService
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +30,7 @@ class CandleMonitorService:
         bootstrap_mode: bool = True,
         bootstrap_bars: int = 1,
         indicators: Optional[IndicatorsService] = None,
+        signals: Optional[SignalService] = None,
     ) -> None:
         self._mt5 = mt5
         self._timeframe_sec = timeframe_to_seconds(mt5.timeframe)
@@ -37,6 +40,7 @@ class CandleMonitorService:
         self._symbol_digits: Optional[int] = None
         self._last_seen_epoch: Optional[int] = None  # epoch seconds of last processed CLOSED candle
         self._indicators = indicators
+        self._signals = signals
         self._announced_ready = False  # guard to log a one-time "indicators ready" message
 
     def process_once(self) -> None:
@@ -75,7 +79,8 @@ class CandleMonitorService:
                     for candle in backfill:
                         self._log_candle(symbol, candle)
                         self._last_seen_epoch = candle.epoch
-                        self._update_indicators(candle)
+                        snap = self._update_indicators(candle)
+                        self._maybe_emit_signal(candle, snap, is_live_bar=False)
                 else:
                     # Option B: just set the pointer; do not emit historical logs
                     self._last_seen_epoch = last_closed_epoch
@@ -107,7 +112,10 @@ class CandleMonitorService:
                         for candle in backfill_for_span:
                             self._log_candle(symbol, candle)
                             self._last_seen_epoch = candle.epoch
-                            self._update_indicators(candle)
+                            snap = self._update_indicators(candle)
+                            # During first hydration: treat as backfill, mark LIVE only if it's the freshest bar we caught up to
+                            is_live = candle.epoch == new_epoch
+                            self._maybe_emit_signal(candle, snap, is_live_bar=is_live)
 
                     # Break immediately after extending
                     if self._last_seen_epoch and new_epoch == self._last_seen_epoch:
@@ -142,12 +150,15 @@ class CandleMonitorService:
                             for candle in backfill:
                                 self._log_candle(symbol, candle)
                                 self._last_seen_epoch = candle.epoch
-                                self._update_indicators(candle)
+                                snap = self._update_indicators(candle)
+                                is_live = candle.epoch == new_epoch  # only the latest is truly live
+                                self._maybe_emit_signal(candle, snap, is_live_bar=is_live)
                         else:
                             # At least process the newly closed bar
                             self._log_candle(symbol, new_last_closed)
                             self._last_seen_epoch = new_epoch
-                            self._update_indicators(new_last_closed)
+                            snap = self._update_indicators(new_last_closed)
+                            self._maybe_emit_signal(new_last_closed, snap, is_live_bar=True)
 
                         break
 
@@ -163,12 +174,15 @@ class CandleMonitorService:
                 for candle in backfill:
                     self._log_candle(symbol, candle)
                     self._last_seen_epoch = candle.epoch
-                    self._update_indicators(candle)
+                    snap = self._update_indicators(candle)
+                    is_live = candle.epoch == last_closed_epoch  # last one equals current last_closed
+                    self._maybe_emit_signal(candle, snap, is_live_bar=is_live)
             else:
                 # Fallback: process last_closed at least
                 self._log_candle(symbol, last_closed)
                 self._last_seen_epoch = last_closed_epoch
-                self._update_indicators(last_closed)
+                snap = self._update_indicators(last_closed)
+                self._maybe_emit_signal(last_closed, snap, is_live_bar=True)
 
         except Exception as e:
             logger.exception(f"Monitor error for {symbol}: {e}")
@@ -218,13 +232,13 @@ class CandleMonitorService:
                     )
                     break
 
-    def _update_indicators(self, candle: Candle) -> None:
+    def _update_indicators(self, candle: Candle) -> Optional[IndicatorsSnapshot]:
         """
         Feed the just-processed CLOSED candle into the indicators pipeline and log readiness.
         No trading decisions here, only pure telemetry, kept at DEBUG level when ready.
         """
         if self._indicators is None:
-            return
+            return None
 
         if self._symbol_digits is None:
             self._symbol_digits = self._mt5.get_symbol_meta(self._symbol).digits
@@ -237,7 +251,7 @@ class CandleMonitorService:
                 snap.bars_until_ready_ema200,
                 snap.bars_until_ready_macd_histogram,
             )
-            return
+            return snap
 
         d = self._symbol_digits + 1
         ema_format = f"%.{d}f"
@@ -254,3 +268,17 @@ class CandleMonitorService:
         )
         if not self._announced_ready:
             self._announced_ready = True
+
+        return snap
+
+    def _maybe_emit_signal(self, candle: Candle, snapshot, is_live_bar: bool) -> None:
+        """
+        If SignalService is present, evaluate the last-4 pattern + filters using the
+        provided IndicatorsSnapshot aligned with this candle, and log any emitted signal.
+        """
+        if self._signals is None or snapshot is None:
+            return
+        try:
+            self._signals.on_closed(candle, snapshot, is_live_bar=is_live_bar)
+        except Exception as e:
+            logger.exception("Signal evaluation failed: %s", e)
