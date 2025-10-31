@@ -2,17 +2,48 @@ from __future__ import annotations
 
 import atexit
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 import mt5_wrapper as mt5
+from mt5_wrapper import ORDER_TYPE_BUY, ORDER_TYPE_SELL, TRADE_ACTION_DEAL
 
 from app.domain.models import Candle, SymbolMeta
+from app.domain.signals import SignalSide as Side
 from app.infra.timeframe import humanize_mt5_timeframe
 
 from .mt5_utils import parse_mt5_version, with_mt5_error
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class Quote:
+    bid: float
+    ask: float
+    time_utc: datetime
+
+
+@dataclass(frozen=True)
+class OpenPosition:
+    ticket: int
+    symbol: str
+    side: Side
+    lot: float
+    price_open: float
+    time_utc: datetime
+
+
+@dataclass(frozen=True)
+class OrderSendResult:
+    status: Literal["FILLED", "REJECTED", "ERROR"]
+    ticket: int
+    entry_price: float
+    stop_loss: float
+    take_profit: float
+    time_utc: datetime
+    reason: Optional[str] = None
 
 
 class MT5Client:
@@ -190,3 +221,78 @@ class MT5Client:
         # MT5 usually returns ascending, but ensure ordering
         candles.sort(key=lambda candle: int(candle.time_utc.timestamp()))
         return candles
+
+    def get_quote(self, symbol: str) -> Optional[Quote]:
+        info = mt5.symbol_info_tick(symbol)
+        if info is None:
+            return None
+        # mt5 returns time in seconds since 1970 (broker/server), treat as UTC
+        time_utc = datetime.fromtimestamp(info.time, tz=timezone.utc)
+        return Quote(bid=float(info.bid), ask=float(info.ask), time_utc=time_utc)
+
+    def get_account_balance(self) -> float:
+        account = mt5.account_info()
+        return float(account.balance) if account else 0.0
+
+    def get_positions(self, symbol: str) -> List[OpenPosition]:
+        rows = mt5.positions_get(symbol=symbol) or []
+        out: List[OpenPosition] = []
+        for position in rows:
+            out.append(
+                OpenPosition(
+                    ticket=int(position.ticket),
+                    symbol=position.symbol,
+                    side=Side.BUY if int(position.type) == 0 else Side.SELL,
+                    lot=float(position.volume),
+                    price_open=float(position.price_open),
+                    time_utc=datetime.fromtimestamp(int(position.time), tz=timezone.utc),
+                )
+            )
+        return out
+
+    def send_market_order(
+        self,
+        symbol: str,
+        side: Side,
+        volume: float,
+        sl: float,
+        tp: float,
+        deviation: int = 10,
+    ) -> Optional[OrderSendResult]:
+        """
+        Sends a market order with SL/TP. Returns OrderSendResult or None on MT5 error.
+        """
+
+        order_type = ORDER_TYPE_BUY if side == Side.BUY else ORDER_TYPE_SELL
+
+        request = {
+            "action": TRADE_ACTION_DEAL,
+            "symbol": symbol,
+            "type": order_type,
+            "volume": float(volume),
+            "deviation": int(deviation),
+            "sl": float(sl),
+            "tp": float(tp),
+        }
+
+        response = mt5.order_send(request)
+        if response is None:
+            return None
+
+        # Map result
+        # response.retcode == 10009 (done) on MetaTrader5; adjust mapping for your wrapper
+        status = "FILLED" if getattr(response, "retcode", 0) in (10009,) else "REJECTED"
+        reason = getattr(response, "comment", None)
+        entry = getattr(response, "price", 0.0)
+        ticket = getattr(response, "order", 0)
+        time_utc = datetime.now(tz=timezone.utc)
+
+        return OrderSendResult(
+            status=status,
+            ticket=int(ticket),
+            entry_price=float(entry),
+            stop_loss=float(sl),
+            take_profit=float(tp),
+            time_utc=time_utc,
+            reason=reason,
+        )
