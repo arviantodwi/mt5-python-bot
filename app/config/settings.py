@@ -1,5 +1,5 @@
 from decimal import Decimal
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     # Load environment variables and apply default metadata
-    model_config = SettingsConfigDict(env_file=".env", extra="forbid", frozen=True)
+    model_config = SettingsConfigDict(env_file=".env", env_ignore_empty=True, extra="forbid", frozen=True)
 
     # MetaTrader 5 terminal settings
     terminal_path: str = Field(
@@ -56,6 +56,25 @@ class Settings(BaseSettings):
     doji_ratio: float = Field(
         0.1,
         description="Ratio defining what constitutes a Doji candle. Optional. Default: 0.1.",
+    )
+
+    freeze_hours: Optional[float] = Field(
+        None,
+        description="Freeze window (in hours) that starts after a position is closed. Prevents new trades until the freeze period ends. Optional. Default: None.",
+    )
+
+    # Supported values:
+    #   "off"          -> never adjust SL; skip trade if too close.
+    #   "conservative" -> adjust SL only if required widening ≤ SL_NUDGE_FACTOR * planned distance.
+    #   "flexible"     -> always adjust SL as needed.
+    sl_nudge_mode: Literal["off", "conservative", "flexible"] = Field(
+        "conservative",
+        description="Stop-loss nudge policy to satisfy broker minimum stop distance (stops level). Optional. Default: conservative.",
+    )
+
+    sl_nudge_factor: float = Field(
+        1.5,
+        description='Maximum allowed widening multiplier for conservative nudge mode. Ignored if SL_NUDGE_MODE="off" or "flexible". Optional. Default: 1.5.',
     )
 
     # Bot settings
