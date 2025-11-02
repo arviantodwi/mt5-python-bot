@@ -69,9 +69,9 @@ jobs:
           Write-Host "Clearing existing application files..."
           Get-ChildItem -Path ${{ env.DEPLOY_PATH }} -Exclude venv, run_app.bat | Remove-Item -Recurse -Force
 
-          # # Copy the new files into the deployment path
-          # Write-Host "Copying new application files..."
-          # Copy-Item -Path ${{ env.ARTIFACT_PATH }}\${{ env.ARTIFACT_NAME }}\* -Destination ${{ env.DEPLOY_PATH }} -Recurse -Force
+          # Copy the new files into the deployment path
+          Write-Host "Copying new application files..."
+          Copy-Item -Path ${{ env.ARTIFACT_PATH }}\${{ env.ARTIFACT_NAME }}\* -Destination ${{ env.DEPLOY_PATH }} -Recurse -Force
 
           # # Update dependencies inside the existing venv
           # Write-Host "Updating dependencies in venv..."
@@ -82,8 +82,8 @@ jobs:
           Remove-Item -Path ${{ env.ARTIFACT_PATH }} -Recurse -Force
 
           # Restart the NSSM-managed service
-          Write-Host "Starting service: ${{ env.SERVICE_NAME }}"
-          Start-Service -Name "${{ env.SERVICE_NAME }}"
+          # Write-Host "Starting service: ${{ env.SERVICE_NAME }}"
+          # Start-Service -Name "${{ env.SERVICE_NAME }}"
 
           Write-Host "Deployment complete and service restarted."
         shell: powershell
