@@ -48,7 +48,7 @@ jobs:
 
     env:
       DEPLOY_PATH: C:\mt5-python-bot # Server's final deployment directory
-      ARTIFACT_PATH: ${{ env.DEPLOY_PATH }}_temp # Artifact download directory
+      ARTIFACT_PATH: C:\mt5-python-bot_temp # Artifact download directory
       SERVICE_NAME: "MT5 Python Bot"
 
     steps:
