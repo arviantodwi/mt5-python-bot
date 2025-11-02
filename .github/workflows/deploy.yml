@@ -71,7 +71,8 @@ jobs:
 
           # Copy the new files into the deployment path
           Write-Host "Copying new application files..."
-          Copy-Item -Path ${{ env.ARTIFACT_PATH }}\${{ env.ARTIFACT_NAME }}\* -Destination ${{ env.DEPLOY_PATH }} -Recurse -Force
+          Copy-Item -Path ${{ env.ARTIFACT_PATH }}\* -Destination ${{ env.DEPLOY_PATH }} -Recurse -Force
+          # \${{ env.ARTIFACT_NAME }}
 
           # # Update dependencies inside the existing venv
           # Write-Host "Updating dependencies in venv..."
