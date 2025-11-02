@@ -5,12 +5,12 @@ on:
     branches:
       - dev/cd-0.0.6 # Trigger on push to main branch
 
+env:
+  ARTIFACT_NAME: mt5-python-bot-artifact
+
 jobs:
   build:
     runs-on: windows-latest
-
-    env:
-      ARTIFACT_NAME: mt5-python-bot-artifact
 
     steps:
       - name: Checkout Repository
@@ -49,7 +49,6 @@ jobs:
     env:
       DEPLOY_PATH: C:\mt5-python-bot # Server's final deployment directory
       ARTIFACT_PATH: ${{ env.DEPLOY_PATH }}_temp # Artifact download directory
-      ARTIFACT_NAME: mt5-python-bot-artifact
       SERVICE_NAME: "MT5 Python Bot"
 
     steps:
