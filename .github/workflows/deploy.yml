@@ -56,7 +56,7 @@ jobs:
         uses: actions/download-artifact@v6
         with:
           name: ${{ env.ARTIFACT_NAME }}
-          path: ${{ env.DEPLOY_PATH }}_temp # Download to a temporary folder
+          path: ${{ env.ARTIFACT_PATH }} # Download to a temporary folder
 
       - name: Stop Service, Deploy, Update Venv, and Restart
         # Heart of the CD process, running directly on Windows Server
@@ -69,14 +69,14 @@ jobs:
           Write-Host "Clearing existing application files..."
           Get-ChildItem -Path ${{ env.DEPLOY_PATH }} -Exclude venv, run_app.bat | Remove-Item -Recurse -Force
 
-          # Copy the new files into the deployment path
-          Write-Host "Copying new application files..."
-          Copy-Item -Path ${{ env.ARTIFACT_PATH }}\${{ env.ARTIFACT_NAME }}\* -Destination ${{ env.DEPLOY_PATH }} -Recurse -Force
+          # # Copy the new files into the deployment path
+          # Write-Host "Copying new application files..."
+          # Copy-Item -Path ${{ env.ARTIFACT_PATH }}\${{ env.ARTIFACT_NAME }}\* -Destination ${{ env.DEPLOY_PATH }} -Recurse -Force
 
-          # Update dependencies inside the existing venv
-          Write-Host "Updating dependencies in venv..."
-          & "${{ env.DEPLOY_PATH }}\venv\Scripts\python.exe" -m pip install --upgrade pip
-          & "${{ env.DEPLOY_PATH }}\venv\Scripts\pip.exe" install -r "${{ env.DEPLOY_PATH }}\requirements.txt" --upgrade --no-cache-dir
+          # # Update dependencies inside the existing venv
+          # Write-Host "Updating dependencies in venv..."
+          # & "${{ env.DEPLOY_PATH }}\venv\Scripts\python.exe" -m pip install --upgrade pip
+          # & "${{ env.DEPLOY_PATH }}\venv\Scripts\pip.exe" install -r "${{ env.DEPLOY_PATH }}\requirements.txt" --upgrade --no-cache-dir
 
           # Clean up the downloaded artifact folder
           Remove-Item -Path ${{ env.ARTIFACT_PATH }} -Recurse -Force
