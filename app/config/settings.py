@@ -25,13 +25,10 @@ class Settings(BaseSettings):
     )
 
     # Trade settings
-    rr: Decimal = Field(
-        Decimal(1.5), decimal_places=1, description="Multiplier for the risk-to-reward ratio. Optional. Default: 1.5."
-    )
+    rr: float = Field(1.5, description="Multiplier for the risk-to-reward ratio. Optional. Default: 1.5.")
 
-    risk_percentage: Decimal = Field(
-        Decimal(0.01),
-        decimal_places=2,
+    risk_percentage: float = Field(
+        0.01,
         description="Percentage of risk per trade (e.g., 0.01 for 1%). Optional. Default: 0.01.",
     )
 

@@ -1,14 +1,18 @@
 import logging
 import time
-from datetime import timedelta
-from typing import List, Optional
+from collections import deque
+from datetime import datetime, timedelta, timezone
+from typing import Deque, List, Optional
 
 from app.adapters.mt5_client import MT5Client
 from app.domain.indicators import IndicatorsSnapshot
 from app.domain.models import Candle
 from app.infra.clock import JAKARTA_TZ
 from app.infra.timeframe import timeframe_to_seconds
+from app.services.execution import ExecutionService
 from app.services.indicators import IndicatorsService
+from app.services.order_planner import OrderPlannerService
+from app.services.position_guard import PositionGuardService
 from app.services.signal import SignalService
 
 logger = logging.getLogger(__name__)
@@ -31,6 +35,9 @@ class CandleMonitorService:
         bootstrap_bars: int = 1,
         indicators: Optional[IndicatorsService] = None,
         signals: Optional[SignalService] = None,
+        planner: Optional[OrderPlannerService] = None,
+        guard: Optional[PositionGuardService] = None,
+        executor: Optional[ExecutionService] = None,
     ) -> None:
         self._mt5 = mt5
         self._timeframe_sec = timeframe_to_seconds(mt5.timeframe)
@@ -41,7 +48,11 @@ class CandleMonitorService:
         self._last_seen_epoch: Optional[int] = None  # epoch seconds of last processed CLOSED candle
         self._indicators = indicators
         self._signals = signals
+        self._planner = planner
+        self._guard = guard
+        self._executor = executor
         self._announced_ready = False  # guard to log a one-time "indicators ready" message
+        self._candles_4: Deque[Candle] = deque(maxlen=4)
 
     def process_once(self) -> None:
         self._process_symbol(self._symbol)
@@ -78,6 +89,7 @@ class CandleMonitorService:
 
                     for candle in backfill:
                         self._log_candle(symbol, candle)
+                        self._candles_4.append(candle)
                         self._last_seen_epoch = candle.epoch
                         snap = self._update_indicators(candle)
                         self._maybe_emit_signal(candle, snap, is_live_bar=False)
@@ -111,6 +123,7 @@ class CandleMonitorService:
 
                         for candle in backfill_for_span:
                             self._log_candle(symbol, candle)
+                            self._candles_4.append(candle)
                             self._last_seen_epoch = candle.epoch
                             snap = self._update_indicators(candle)
                             # During first hydration: treat as backfill, mark LIVE only if it's the freshest bar we caught up to
@@ -149,6 +162,7 @@ class CandleMonitorService:
                         if backfill:
                             for candle in backfill:
                                 self._log_candle(symbol, candle)
+                                self._candles_4.append(candle)
                                 self._last_seen_epoch = candle.epoch
                                 snap = self._update_indicators(candle)
                                 is_live = candle.epoch == new_epoch  # only the latest is truly live
@@ -156,6 +170,7 @@ class CandleMonitorService:
                         else:
                             # At least process the newly closed bar
                             self._log_candle(symbol, new_last_closed)
+                            self._candles_4.append(new_last_closed)
                             self._last_seen_epoch = new_epoch
                             snap = self._update_indicators(new_last_closed)
                             self._maybe_emit_signal(new_last_closed, snap, is_live_bar=True)
@@ -173,6 +188,7 @@ class CandleMonitorService:
 
                 for candle in backfill:
                     self._log_candle(symbol, candle)
+                    self._candles_4.append(candle)
                     self._last_seen_epoch = candle.epoch
                     snap = self._update_indicators(candle)
                     is_live = candle.epoch == last_closed_epoch  # last one equals current last_closed
@@ -180,6 +196,7 @@ class CandleMonitorService:
             else:
                 # Fallback: process last_closed at least
                 self._log_candle(symbol, last_closed)
+                self._candles_4.append(last_closed)
                 self._last_seen_epoch = last_closed_epoch
                 snap = self._update_indicators(last_closed)
                 self._maybe_emit_signal(last_closed, snap, is_live_bar=True)
@@ -280,5 +297,45 @@ class CandleMonitorService:
             return
         try:
             self._signals.on_closed(candle, snapshot, is_live_bar=is_live_bar)
+            sig = self._signals.on_closed(candle, snapshot, is_live_bar=is_live_bar)
+            # Only proceed to trading flow on LIVE signals; ignore stale/backfill for execution
+            if not sig or not getattr(sig, "is_live", False):
+                return
+
+            # Guard rails: single open position & freeze window
+            if self._guard and self._guard.has_open_position():
+                logger.info("Skip %s signal: position already open.", self._symbol)
+                return
+            if self._guard and self._guard.is_in_freeze(datetime.now(timezone.utc)):
+                logger.info("Skip %s signal: in freeze window.", self._symbol)
+                return
+
+            # Build order plan from the last 4 candles (strategy’s reference window)
+            if not self._planner:
+                return
+            if len(self._candles_4) < 4:
+                # Not enough history buffered yet (very early lifecycle)
+                return
+
+            meta = self._mt5.get_symbol_meta(self._symbol)
+            plan = self._planner.from_last4(
+                symbol=self._symbol,
+                side=sig.side,  # enum from domain/signals.py
+                last4=self._candles_4,
+                meta=meta,
+                signal_time_utc=sig.candle_time_utc,
+            )
+            if not plan:
+                logger.info("Planning rejected %s signal (policy/constraints).", self._symbol)
+                return
+
+            # Execute market order
+            if not self._executor:
+                return
+            exec_res = self._executor.execute_market(plan)
+            if exec_res is None:
+                # Already logged inside ExecutionService
+                return
+
         except Exception as e:
             logger.exception("Signal evaluation failed: %s", e)

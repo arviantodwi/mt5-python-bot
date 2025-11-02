@@ -7,7 +7,11 @@ from app.infra.logging import setup_logging
 from app.infra.terminal import clear_terminal
 from app.infra.timeframe import timeframe_to_seconds
 from app.services.candle_monitor import CandleMonitorService
+from app.services.execution import ExecutionService
 from app.services.indicators import IndicatorsService
+from app.services.order_planner import OrderPlannerService
+from app.services.position_guard import PositionGuardService
+from app.services.risk import RiskService
 from app.services.scheduler import SchedulerService
 from app.services.signal import SignalService
 
@@ -44,8 +48,50 @@ def run() -> None:
         # Nudge the terminal to hydrate history faster at session open
         mt5.prime_history(settings.symbol, count=1500)
 
-        # Enable indicator service
+        # Enable services
+        # Indicators
         indicators = IndicatorsService(histogram_window=4)
+        # Signals
+        signals = SignalService(
+            symbol=settings.symbol, timeframe_minutes=settings.timeframe, doji_ratio=settings.doji_ratio
+        )
+        # Risk Calculator
+        risk = RiskService(risk_percentage=settings.risk_percentage)
+        # Order Planner
+        planner = OrderPlannerService(
+            rr=settings.rr,
+            nudge_mode=settings.sl_nudge_mode,
+            nudge_factor=settings.sl_nudge_factor,
+        )
+        # Position Guard
+        guard = PositionGuardService(
+            mt5=mt5,
+            symbol=settings.symbol,
+            freeze_hours=settings.freeze_hours,
+        )
+        # Execution
+        executor = ExecutionService(
+            mt5=mt5,
+            risk=risk,
+            nudge_mode=settings.sl_nudge_mode,
+            nudge_factor=settings.sl_nudge_factor,
+        )
+        # Candle Monitoring
+        monitor = CandleMonitorService(
+            mt5=mt5,
+            symbol=settings.symbol,
+            bootstrap_mode=True,  # log small warmup
+            bootstrap_bars=1,
+            indicators=indicators,
+            signals=signals,
+            planner=planner,
+            guard=guard,
+            executor=executor,
+        )
+        window = SessionWindow(
+            start_hour=settings.session_start_hour, end_hour=settings.session_end_hour, tz=JAKARTA_TZ
+        )
+        scheduler = SchedulerService(window=window, timeframe=mt5.timeframe, buffer_seconds=1.0)  # Scheduler
 
         # Seed indicators pack with recent bars so EMA200 & MACD histogram are ready from the first live bar
         last = mt5.get_last_closed_candle(settings.symbol)
@@ -58,27 +104,6 @@ def run() -> None:
                 until_inclusive_epoch=last.epoch,
             )
             indicators.warmup_with_candles(recent)
-
-        # Enable signal service
-        signals = SignalService(
-            symbol=settings.symbol, timeframe_minutes=settings.timeframe, doji_ratio=settings.doji_ratio
-        )
-
-        # Enable candle monitoring service
-        monitor = CandleMonitorService(
-            mt5=mt5,
-            symbol=settings.symbol,
-            bootstrap_mode=True,  # log small warmup
-            bootstrap_bars=1,
-            indicators=indicators,
-            signals=signals,
-        )
-
-        # Enable session-aware scheduler service
-        window = SessionWindow(
-            start_hour=settings.session_start_hour, end_hour=settings.session_end_hour, tz=JAKARTA_TZ
-        )
-        scheduler = SchedulerService(window=window, timeframe=mt5.timeframe, buffer_seconds=1.0)
 
         # Callback for scheduler.
         def on_candle_close():
