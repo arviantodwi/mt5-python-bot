@@ -53,11 +53,6 @@ jobs:
       SERVICE_NAME: "MT5 Python Bot"
 
     steps:
-      - name: Setup Python 3.13
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.13"
-
       - name: Download Deployment Artifact
         uses: actions/download-artifact@v6
         with:
@@ -83,7 +78,7 @@ jobs:
           # Update dependencies inside the existing venv
           if (-not (Test-Path -Path "${{ env.DEPLOY_PATH }}\venv")) {
             Write-Host "Creating venv in ${{ env.DEPLOY_PATH }}\venv"
-            python -m venv "${{ env.DEPLOY_PATH }}\venv"
+            & python -m venv "${{ env.DEPLOY_PATH }}\venv"
           }
           Write-Host "Updating dependencies in venv..."
           & "${{ env.DEPLOY_PATH }}\venv\Scripts\python.exe" -m pip install --upgrade pip
