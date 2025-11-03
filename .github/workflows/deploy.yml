@@ -74,7 +74,11 @@ jobs:
           Copy-Item -Path ${{ env.ARTIFACT_PATH }}\* -Destination ${{ env.DEPLOY_PATH }} -Recurse -Force
           # \${{ env.ARTIFACT_NAME }}
 
-          # # Update dependencies inside the existing venv
+          # Update dependencies inside the existing venv
+          if (-not (Test-Path -Path "${{ env.DEPLOY_PATH }}\venv")) {
+            Write-Host "Creating venv in ${{ env.DEPLOY_PATH }}\venv"
+            python -m venv "${{ env.DEPLOY_PATH }}\venv"
+          }
           Write-Host "Updating dependencies in venv..."
           & "${{ env.DEPLOY_PATH }}\venv\Scripts\python.exe" -m pip install --upgrade pip
           & "${{ env.DEPLOY_PATH }}\venv\Scripts\pip.exe" install -r "${{ env.DEPLOY_PATH }}\requirements.txt" --upgrade --no-cache-dir
