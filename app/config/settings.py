@@ -80,3 +80,6 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
         "INFO", description="Logging level to show in file and console. Optional. Default: INFO"
     )
+
+    hydrate_max_retries: int = 3
+    hydrate_retry_sec: float = 1.0

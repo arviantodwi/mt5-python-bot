@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Deque, List, Optional
 
 from app.adapters.mt5_client import MT5Client
+from app.config.settings import Settings
 from app.domain.indicators import IndicatorsSnapshot
 from app.domain.models import Candle
 from app.infra.clock import JAKARTA_TZ
@@ -59,8 +60,10 @@ class CandleMonitorService:
 
     # TODO Implement feature to process multi symbols
     def _process_symbol(self, symbol: str) -> None:
-        MAX_SYNC_RETRIES = 3
-        SYNC_SLEEP_SEC = 1
+        settings = Settings()  # type: ignore
+
+        HYDRATE_MAX_RETRIES = settings.hydrate_max_retries
+        HIDRATE_RETRY_SEC = settings.hydrate_retry_sec
 
         def fetch_latest() -> Optional[tuple[int, Candle]]:
             last_candle = self._mt5.get_last_closed_candle(symbol)
@@ -101,10 +104,10 @@ class CandleMonitorService:
                 # Minimal sync loop applied to allow MT5 to hydrate the very-latest bar.
                 prev_epoch = self._last_seen_epoch
 
-                for i in range(MAX_SYNC_RETRIES):
+                for i in range(HYDRATE_MAX_RETRIES):
                     # logger.debug("Last closed candle hasn't hydrated yet (seen=%s). Retry #%d", prev_epoch, i + 1)
 
-                    time.sleep(SYNC_SLEEP_SEC)
+                    time.sleep(HIDRATE_RETRY_SEC)
 
                     latest_to_fill = fetch_latest()
                     if not latest_to_fill:
@@ -141,10 +144,10 @@ class CandleMonitorService:
             if last_closed_epoch <= seen:
                 prev_epoch = seen
 
-                for i in range(MAX_SYNC_RETRIES):
+                for i in range(HYDRATE_MAX_RETRIES):
                     logger.debug("Last closed candle hasn't hydrated yet (seen=%s). Retry #%d", prev_epoch, i + 1)
 
-                    time.sleep(SYNC_SLEEP_SEC)
+                    time.sleep(HIDRATE_RETRY_SEC)
 
                     latest_to_fill = fetch_latest()
                     if not latest_to_fill:
