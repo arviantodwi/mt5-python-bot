@@ -75,9 +75,9 @@ jobs:
           # \${{ env.ARTIFACT_NAME }}
 
           # # Update dependencies inside the existing venv
-          # Write-Host "Updating dependencies in venv..."
-          # & "${{ env.DEPLOY_PATH }}\venv\Scripts\python.exe" -m pip install --upgrade pip
-          # & "${{ env.DEPLOY_PATH }}\venv\Scripts\pip.exe" install -r "${{ env.DEPLOY_PATH }}\requirements.txt" --upgrade --no-cache-dir
+          Write-Host "Updating dependencies in venv..."
+          & "${{ env.DEPLOY_PATH }}\venv\Scripts\python.exe" -m pip install --upgrade pip
+          & "${{ env.DEPLOY_PATH }}\venv\Scripts\pip.exe" install -r "${{ env.DEPLOY_PATH }}\requirements.txt" --upgrade --no-cache-dir
 
           # Clean up the downloaded artifact folder
           # Remove-Item -Path ${{ env.ARTIFACT_PATH }} -Recurse -Force
