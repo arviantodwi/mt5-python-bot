@@ -54,10 +54,23 @@ class RiskService:
                 break
             risk_used = lot * risk_per_lot
 
-        return (round(lot, 2), risk_used)  # MT5 usually accepts 2 decimals for FX; adjust if your symbols differ
+        # Round display/adapter precision to the symbol's lot_step decimals
+        digits = self._decimals_from_step(meta.lot_step)
+        return (round(lot, digits), risk_used)
 
     @staticmethod
     def _floor_to_step(lot: float, step: float) -> float:
         if step <= 0:
             return lot
         return math.floor(lot / step) * step
+
+    @staticmethod
+    def _decimals_from_step(step: float) -> int:
+        """
+        Compute number of decimals required by the lot step, e.g.:
+        1.0 -> 0, 0.1 -> 1, 0.01 -> 2, 0.001 -> 3
+        """
+        s = f"{step:.10f}".rstrip("0")
+        if "." not in s:
+            return 0
+        return len(s.split(".")[1])
