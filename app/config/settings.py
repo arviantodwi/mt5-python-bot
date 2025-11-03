@@ -1,4 +1,3 @@
-from decimal import Decimal
 from typing import Literal, Optional
 
 from pydantic import Field
@@ -32,9 +31,8 @@ class Settings(BaseSettings):
         description="Percentage of risk per trade (e.g., 0.01 for 1%). Optional. Default: 0.01.",
     )
 
-    lot_step: Decimal = Field(
-        Decimal(0.01),
-        decimal_places=2,
+    lot_step: float = Field(
+        0.01,
         description="Step size for lot increment or decrement. Optional. Default: 0.01.",
     )
 
