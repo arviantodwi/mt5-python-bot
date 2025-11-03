@@ -78,7 +78,8 @@ jobs:
           # Update dependencies inside the existing venv
           if (-not (Test-Path -Path "${{ env.DEPLOY_PATH }}\venv")) {
             Write-Host "Creating venv in ${{ env.DEPLOY_PATH }}\venv"
-            & "${{ env.RUNNER_PYTHON_PATH }}\python.exe" -m venv "${{ env.DEPLOY_PATH }}\venv"
+            $pythonPath = (Get-Command python).Source
+            & $pythonPath -m venv "${{ env.DEPLOY_PATH }}\venv"
           }
           Write-Host "Updating dependencies in venv..."
           & "${{ env.DEPLOY_PATH }}\venv\Scripts\python.exe" -m pip install --upgrade pip
