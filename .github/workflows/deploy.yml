@@ -42,6 +42,7 @@ jobs:
           Copy-Item -Path .\app -Destination $app_dir -Recurse -Force -Exclude __pycache__
           Copy-Item -Path .\main.py -Destination $app_dir -Force
           Copy-Item -Path .\requirements.txt -Destination $app_dir -Force
+          Copy-Item -Path .\start.bat -Destination $app_dir -Force
         shell: powershell
 
       - name: Upload Deployment Artifact
