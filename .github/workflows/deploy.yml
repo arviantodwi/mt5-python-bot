@@ -49,6 +49,7 @@ jobs:
     env:
       DEPLOY_PATH: C:\mt5-python-bot # Server's final deployment directory
       ARTIFACT_PATH: C:\mt5-python-bot_temp # Artifact download directory
+      RUNNER_PYTHON_PATH: C:\Users\Administrator\AppData\Local\Programs\Python\Python313
       SERVICE_NAME: "MT5 Python Bot"
 
     steps:
@@ -77,7 +78,7 @@ jobs:
           # Update dependencies inside the existing venv
           if (-not (Test-Path -Path "${{ env.DEPLOY_PATH }}\venv")) {
             Write-Host "Creating venv in ${{ env.DEPLOY_PATH }}\venv"
-            python -m venv "${{ env.DEPLOY_PATH }}\venv"
+            "${{ env.RUNNER_PYTHON_PATH }}\python.exe" -m venv "${{ env.DEPLOY_PATH }}\venv"
           }
           Write-Host "Updating dependencies in venv..."
           & "${{ env.DEPLOY_PATH }}\venv\Scripts\python.exe" -m pip install --upgrade pip
