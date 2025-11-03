@@ -292,7 +292,6 @@ class CandleMonitorService:
         if self._signals is None or snapshot is None:
             return
         try:
-            self._signals.on_closed(candle, snapshot, is_live_bar=is_live_bar)
             sig = self._signals.on_closed(candle, snapshot, is_live_bar=is_live_bar)
             # Only proceed to trading flow on LIVE signals; ignore stale/backfill for execution
             if not sig or not getattr(sig, "is_live", False):
