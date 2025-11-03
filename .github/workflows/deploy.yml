@@ -80,7 +80,7 @@ jobs:
           # & "${{ env.DEPLOY_PATH }}\venv\Scripts\pip.exe" install -r "${{ env.DEPLOY_PATH }}\requirements.txt" --upgrade --no-cache-dir
 
           # Clean up the downloaded artifact folder
-          Remove-Item -Path ${{ env.ARTIFACT_PATH }} -Recurse -Force
+          # Remove-Item -Path ${{ env.ARTIFACT_PATH }} -Recurse -Force
 
           # Restart the NSSM-managed service
           # Write-Host "Starting service: ${{ env.SERVICE_NAME }}"
