@@ -223,17 +223,13 @@ class CandleMonitorService:
         volume = candle.volume
 
         logger.info(
-            "Candle {} {} (server: {}) closed | O={} H={} L={} C={} Volume={}".format(
+            "Candle {} {} (server: {}) closed".format(
                 symbol,
                 local_open_time.strftime("%Y-%m-%d %H:%M:%S"),
                 server_open_time.strftime("%Y-%m-%d %H:%M:%S"),
-                open,
-                high,
-                low,
-                close,
-                volume,
             )
         )
+        logger.debug("OHLC & Vol | O={} H={} L={} C={} Volume={}".format(open, high, low, close, volume))
 
     def _warn_if_irregular_spacing(self, candles: List[Candle]) -> None:
         if len(candles) >= 2:
@@ -273,10 +269,10 @@ class CandleMonitorService:
         d = self._symbol_digits + 1
         ema_format = f"%.{d}f"
         macd_format = "%.6f"
-        log_prefix = "Indicators ready" if not self._announced_ready else "Indicators"
-        logger.info(
-            "{} | EMA200={} MACD={} Signal={} Histogram={}".format(
-                log_prefix,
+        # log_prefix = "Indicators ready" if not self._announced_ready else "Indicators"
+        logger.debug(
+            "Indicators | EMA200={} MACD={} Signal={} Histogram={}".format(
+                # log_prefix,
                 ema_format % snap.ema200,
                 macd_format % snap.macd,
                 macd_format % snap.signal,

@@ -14,6 +14,7 @@ from app.services.position_guard import PositionGuardService
 from app.services.risk import RiskService
 from app.services.scheduler import SchedulerService
 from app.services.signal import SignalService
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -51,24 +52,29 @@ def run() -> None:
         # Enable services
         # Indicators
         indicators = IndicatorsService(histogram_window=4)
+
         # Signals
         signals = SignalService(
             symbol=settings.symbol, timeframe_minutes=settings.timeframe, doji_ratio=settings.doji_ratio
         )
+
         # Risk Calculator
         risk = RiskService(risk_percentage=settings.risk_percentage)
+
         # Order Planner
         planner = OrderPlannerService(
             rr=settings.rr,
             nudge_mode=settings.sl_nudge_mode,
             nudge_factor=settings.sl_nudge_factor,
         )
+
         # Position Guard
         guard = PositionGuardService(
             mt5=mt5,
             symbol=settings.symbol,
             freeze_hours=settings.freeze_hours,
         )
+
         # Execution
         executor = ExecutionService(
             mt5=mt5,
@@ -76,6 +82,7 @@ def run() -> None:
             nudge_mode=settings.sl_nudge_mode,
             nudge_factor=settings.sl_nudge_factor,
         )
+
         # Candle Monitoring
         monitor = CandleMonitorService(
             mt5=mt5,
@@ -88,22 +95,33 @@ def run() -> None:
             guard=guard,
             executor=executor,
         )
+
+        # Scheduler
         window = SessionWindow(
             start_hour=settings.session_start_hour, end_hour=settings.session_end_hour, tz=JAKARTA_TZ
         )
-        scheduler = SchedulerService(window=window, timeframe=mt5.timeframe, buffer_seconds=1.0)  # Scheduler
+        scheduler = SchedulerService(window=window, timeframe=mt5.timeframe, buffer_seconds=1.0)
 
         # Seed indicators pack with recent bars so EMA200 & MACD histogram are ready from the first live bar
         last = mt5.get_last_closed_candle(settings.symbol)
         if last:
             tf_sec = timeframe_to_seconds(mt5.timeframe)
-            since = last.epoch - 220 * tf_sec  # ~220 bars: enough for EMA200 seeding
-            recent = mt5.get_backfill_candles(
-                settings.symbol,
+            since = last.epoch - (1500 * tf_sec)
+            warmup_candles = mt5.get_backfill_candles(
+                symbol=settings.symbol,
                 since_exclusive_epoch=since,
                 until_inclusive_epoch=last.epoch,
             )
-            indicators.warmup_with_candles(recent)
+            if warmup_candles:
+                indicators.warmup_with_candles(warmup_candles)
+                logger.info(
+                    "Indicators prewarmed with %d bars | last=%s, since=%s",
+                    len(warmup_candles),
+                    last.time_utc.strftime("%Y-%m-%d %H:%M:%S"),
+                    datetime.fromtimestamp(since + 1, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                )
+            else:
+                logger.warning("No warmup candles returned; indicators will warm live.")
 
         # Callback for scheduler.
         def on_candle_close():
