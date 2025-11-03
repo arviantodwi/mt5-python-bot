@@ -1,9 +1,16 @@
 name: Deploy Bot to Windows Server
 
 on:
+  workflow_dispatch:
+
   push:
     branches:
       - dev/cd-0.0.6 # Trigger on push to main branch
+    paths:
+      - "app/**"
+      - main.py
+      - requirements.txt
+      - start.bat
 
 env:
   ARTIFACT_NAME: mt5-python-bot-artifact
