@@ -5,7 +5,7 @@ on:
 
   push:
     branches:
-      - dev/cd-0.0.6 # Trigger on push to main branch
+      - main # Trigger on push to main branch
     paths:
       - ".github/workflows/deploy.yml"
       - "app/**"
@@ -76,7 +76,7 @@ jobs:
 
           # Clear the app files but keep the virtual environment (venv) and run_app.bat
           Write-Host "Clearing existing application files..."
-          Get-ChildItem -Path ${{ env.DEPLOY_PATH }} -Exclude venv, start.bat | Remove-Item -Recurse -Force
+          Get-ChildItem -Path ${{ env.DEPLOY_PATH }} -Exclude venv, start.bat, logs | Remove-Item -Recurse -Force
 
           # Copy the new files into the deployment path
           Write-Host "Copying new application files..."
