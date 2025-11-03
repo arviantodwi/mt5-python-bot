@@ -1,0 +1,102 @@
+name: Deploy Bot to Windows Server
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - main # Trigger on push to main branch
+    paths:
+      - ".github/workflows/deploy.yml"
+      - "app/**"
+      - main.py
+      - requirements.txt
+      - start.bat
+
+env:
+  ARTIFACT_NAME: mt5-python-bot-artifact
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      - name: Setup Python 3.13
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: "pip" # Cache dependencies for faster builds
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r .\requirements.txt
+
+      - name: Package Application Files
+        run: |
+          $app_dir = "${{ github.workspace }}/app_dist"
+          mkdir $app_dir
+          Copy-Item -Path .\app -Destination $app_dir -Recurse -Force -Exclude __pycache__
+          Copy-Item -Path .\main.py -Destination $app_dir -Force
+          Copy-Item -Path .\requirements.txt -Destination $app_dir -Force
+          Copy-Item -Path .\start.bat -Destination $app_dir -Force
+        shell: powershell
+
+      - name: Upload Deployment Artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ github.workspace }}/app_dist
+
+  deploy:
+    needs: build
+    runs-on: self-hosted
+
+    env:
+      DEPLOY_PATH: C:\mt5-python-bot # Server's final deployment directory
+      ARTIFACT_PATH: C:\mt5-python-bot_temp # Artifact download directory
+      SERVICE_NAME: "MT5 Python Bot"
+
+    steps:
+      - name: Download Deployment Artifact
+        uses: actions/download-artifact@v6
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.ARTIFACT_PATH }} # Download to a temporary folder
+
+      - name: Stop Service, Deploy, Update Venv, and Restart
+        # Heart of the CD process, running directly on Windows Server
+        run: |
+          # Stop the NSSM-managed service
+          Write-Host "Stopping service: ${{ env.SERVICE_NAME }}"
+          Stop-Service -Name "${{ env.SERVICE_NAME }}" -ErrorAction SilentlyContinue
+
+          # Clear the app files but keep the virtual environment (venv) and run_app.bat
+          Write-Host "Clearing existing application files..."
+          Get-ChildItem -Path ${{ env.DEPLOY_PATH }} -Exclude venv, start.bat, logs | Remove-Item -Recurse -Force
+
+          # Copy the new files into the deployment path
+          Write-Host "Copying new application files..."
+          Copy-Item -Path ${{ env.ARTIFACT_PATH }}\* -Destination ${{ env.DEPLOY_PATH }} -Recurse -Force
+
+          # Update dependencies inside the existing venv
+          if (-not (Test-Path -Path "${{ env.DEPLOY_PATH }}\venv")) {
+            Write-Host "Creating venv in ${{ env.DEPLOY_PATH }}\venv"
+            & python -m venv "${{ env.DEPLOY_PATH }}\venv"
+          }
+          Write-Host "Updating dependencies in venv..."
+          & "${{ env.DEPLOY_PATH }}\venv\Scripts\python.exe" -m pip install --upgrade pip
+          & "${{ env.DEPLOY_PATH }}\venv\Scripts\pip.exe" install -r "${{ env.DEPLOY_PATH }}\requirements.txt" --upgrade --no-cache-dir
+
+          # Clean up the downloaded artifact folder
+          Remove-Item -Path ${{ env.ARTIFACT_PATH }} -Recurse -Force
+
+          # Restart the NSSM-managed service
+          Write-Host "Starting service: ${{ env.SERVICE_NAME }}"
+          Start-Service -Name "${{ env.SERVICE_NAME }}"
+
+          Write-Host "Deployment complete and service restarted."
+        shell: powershell
