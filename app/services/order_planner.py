@@ -71,7 +71,5 @@ class OrderPlannerService:
 
     @staticmethod
     def _round_to_digits(price: float, digits: int) -> float:
-        if digits < 0:
-            return price
-        # p = 10**digits
-        return round(price + 0.0, digits)
+        """Round price to the given number of symbol digits."""
+        return price if digits < 0 else round(price, digits)

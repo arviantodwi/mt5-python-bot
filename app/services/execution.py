@@ -58,8 +58,8 @@ class ExecutionService:
 
         # Recompute TP to preserve RR
         tp = self._compute_tp(entry=entry, sl=sl, rr=plan.rr, side=plan.side)
-        sl = self._round_price(sl, meta.digits)
-        tp = self._round_price(tp, meta.digits)
+        sl = self._round_to_digits(sl, meta.digits)
+        tp = self._round_to_digits(tp, meta.digits)
 
         # Compute lot based on risk and actual SL distance
         lot, risk_used = self.risk.compute_lot(balance=balance, entry_price=entry, stop_loss=sl, meta=meta)
@@ -146,5 +146,6 @@ class ExecutionService:
             return entry - rr * risk
 
     @staticmethod
-    def _round_price(price: float, digits: int) -> float:
-        return round(price, digits)
+    def _round_to_digits(price: float, digits: int) -> float:
+        """Round price to the given number of symbol digits."""
+        return price if digits < 0 else round(price, digits)
