@@ -7,6 +7,7 @@ on:
     branches:
       - dev/cd-0.0.6 # Trigger on push to main branch
     paths:
+      - ".github/workflows/deploy.yml"
       - "app/**"
       - main.py
       - requirements.txt
