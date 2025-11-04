@@ -82,7 +82,7 @@ class ExecutionService:
         logger.info(
             "Order filled | %s %s lot=%s entry=%.10f SL=%.10f TP=%.10f ticket=%s",
             symbol,
-            plan.side,
+            plan.side.value,
             lot,
             send_res.entry_price,
             send_res.stop_loss,
