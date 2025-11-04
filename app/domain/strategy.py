@@ -91,6 +91,10 @@ def detect_pattern_and_signal(
     # Close-on-close monotonicity
     closes = (c1.close, c2.close, c3.close, c4.close)
 
+    # Helper to count candles based on the given condition
+    def _count(condition, candles):
+        return sum(1 for c in candles if condition(c))
+
     # MACD histogram monotonicity over the same window
     hist_values = (s1.histogram, s2.histogram, s3.histogram, s4.histogram)
     if any(value is None for value in hist_values):
@@ -110,18 +114,26 @@ def detect_pattern_and_signal(
 
     # Branch by bias with pattern rules
     if bias == Bias.BULLISH:
-        # 1 bearish then 3 bullish -> closes strictly increasing -> histogram strictly increasing
-        if not (is_bear(c1) and is_bull(c2) and is_bull(c3) and is_bull(c4)):
+        # c1 must be bearish
+        if not is_bear(c1):
             return None
+        # among c2..c4, all non-doji must be bullish
+        if _count(lambda x: (not is_doji(x, doji_ratio)) and (not is_bull(x)), (c2, c3, c4)) > 0:
+            return None
+        # closes strictly increasing; histogram strictly increasing
         if not strictly_monotonic(closes, increasing=True):
             return None
         if not strictly_monotonic(hist_values, increasing=True):
             return None
         side = SignalSide.BUY
     else:  # Bias.BEARISH
-        # 1 bullish then 3 bullish -> closes strictly decreasing -> histogram strictly decreasing
-        if not (is_bull(c1) and is_bear(c2) and is_bear(c3) and is_bear(c4)):
+        # c1 must be bullish
+        if not is_bull(c1):
             return None
+        # among c2..c4, all non-doji must be bearish
+        if _count(lambda x: (not is_doji(x, doji_ratio)) and (not is_bear(x)), (c2, c3, c4)) > 0:
+            return None
+        # closes strictly decreasing; histogram strictly decreasing
         if not strictly_monotonic(closes, increasing=False):
             return None
         if not strictly_monotonic(hist_values, increasing=False):
