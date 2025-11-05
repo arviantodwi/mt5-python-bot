@@ -139,11 +139,19 @@ class MT5Client:
         if info is None:
             raise RuntimeError(f"Symbol {symbol} not found on server")
 
+        tick_value = info.trade_tick_value
+        if symbol == "XAUUSD" and info.trade_tick_value == 10.0:
+            # Empirically adjust tick_value to 1.0 to match account contract size.
+            if not self._initialized:
+                # Show log only when the MT5 client is not yet initialized.
+                logger.warning("Adjusting XAUUSD tick_value from 10.0 → 1.0 for accurate lot sizing.")
+            tick_value = 1.0
+
         return SymbolMeta(
             name=info.name,
             digits=info.digits,
             tick_size=info.point,
-            tick_value=info.trade_tick_value,
+            tick_value=tick_value,
             lot_step=info.volume_step,
             min_lot=info.volume_min,
             stops_level=info.trade_stops_level,

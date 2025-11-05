@@ -274,11 +274,11 @@ class CandleMonitorService:
         macd_format = "%.6f"
         # log_prefix = "Indicators ready" if not self._announced_ready else "Indicators"
         logger.debug(
-            "Indicators | EMA200={} MACD={} Signal={} Histogram={}".format(
+            # Only the MACD Histogram value is shown in the log. To show the MACD line and signal
+            # values, add `macd_format % snap.macd` and `macd_format % snap.signal`.
+            "Indicators | EMA200={} MACD Histogram={}".format(
                 # log_prefix,
                 ema_format % snap.ema200,
-                macd_format % snap.macd,
-                macd_format % snap.signal,
                 macd_format % snap.histogram,
             ),
         )
@@ -287,7 +287,7 @@ class CandleMonitorService:
 
         return snap
 
-    def _maybe_emit_signal(self, candle: Candle, snapshot, is_live_bar: bool) -> None:
+    def _maybe_emit_signal(self, candle: Candle, snapshot: Optional[IndicatorsSnapshot], is_live_bar: bool) -> None:
         """
         If SignalService is present, evaluate the last-4 pattern + filters using the
         provided IndicatorsSnapshot aligned with this candle, and log any emitted signal.
