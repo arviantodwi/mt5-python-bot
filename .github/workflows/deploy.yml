@@ -74,7 +74,7 @@ jobs:
           Write-Host "Stopping service: ${{ env.SERVICE_NAME }}"
           Stop-Service -Name "${{ env.SERVICE_NAME }}" -ErrorAction SilentlyContinue
 
-          # Clear the app files but keep the virtual environment (venv) and run_app.bat
+          # Clear the app files but keep the virtual environment (venv), runner script (start.bat) and logs
           Write-Host "Clearing existing application files..."
           Get-ChildItem -Path ${{ env.DEPLOY_PATH }} -Exclude venv, start.bat, logs | Remove-Item -Recurse -Force
 
