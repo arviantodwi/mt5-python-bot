@@ -31,11 +31,6 @@ class Settings(BaseSettings):
         description="Percentage of risk per trade (e.g., 0.01 for 1%). Optional. Default: 0.01.",
     )
 
-    lot_step: float = Field(
-        0.01,
-        description="Step size for lot increment or decrement. Optional. Default: 0.01.",
-    )
-
     symbol: str = Field(..., description="Trading symbol to watch by bot. Required.")
 
     timeframe: int = Field(5, description="Candlestick timeframe in minutes. Optional. Default: 5.")
@@ -73,10 +68,6 @@ class Settings(BaseSettings):
     )
 
     # Bot settings
-    rate_polling_sec: int = Field(
-        1, description="Time interval in seconds to poll for market rates. Optional. Default: 1."
-    )
-
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
         "INFO", description="Logging level to show in file and console. Optional. Default: INFO"
     )
