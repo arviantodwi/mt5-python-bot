@@ -287,7 +287,7 @@ class CandleMonitorService:
 
         return snap
 
-    def _maybe_emit_signal(self, candle: Candle, snapshot, is_live_bar: bool) -> None:
+    def _maybe_emit_signal(self, candle: Candle, snapshot: Optional[IndicatorsSnapshot], is_live_bar: bool) -> None:
         """
         If SignalService is present, evaluate the last-4 pattern + filters using the
         provided IndicatorsSnapshot aligned with this candle, and log any emitted signal.
