@@ -52,7 +52,7 @@ class CandleMonitorService:
         self._planner = planner
         self._guard = guard
         self._executor = executor
-        self._announced_ready = False  # guard to log a one-time "indicators ready" message
+        # self._announced_ready = False  # guard to log a one-time "indicators ready" message
         self._candles_4: Deque[Candle] = deque(maxlen=4)
 
     def process_once(self) -> None:
@@ -297,8 +297,9 @@ class CandleMonitorService:
                 atr_format % snap.atr14 if snap.atr14 is not None else "None (warming)",
             ),
         )
-        if not self._announced_ready:
-            self._announced_ready = True
+
+        # if not self._announced_ready:
+        #     self._announced_ready = True
 
         return snap
 
