@@ -8,13 +8,17 @@ class Settings(BaseSettings):
     # Load environment variables and apply default metadata
     model_config = SettingsConfigDict(env_file=".env", env_ignore_empty=True, extra="forbid", frozen=True)
 
-    # MetaTrader 5 terminal settings
+    # ------------------------------------------------------------------------------
+    #                        MetaTrader 5 Terminal Settings
+    # ------------------------------------------------------------------------------
     terminal_path: str = Field(
         "C:\\Program Files\\MetaTrader 5\\terminal64.exe",
         description="Path to the MetaTrader 5 terminal executable file. Optional. Default is C:\\Program Files\\MetaTrader 5\\terminal64.exe",
     )
 
-    # MetaTrader 5 account settings
+    # ------------------------------------------------------------------------------
+    #                         MetaTrader 5 Account Settings
+    # ------------------------------------------------------------------------------
     account_user: int = Field(..., description="User's login ID for account authentication. Required.")
 
     account_pass: str = Field(..., description="User's password for account authentication. Required.")
@@ -23,7 +27,9 @@ class Settings(BaseSettings):
         ..., description="Trading server to connect to when logging into the user's account. Required."
     )
 
-    # Trade settings
+    # ------------------------------------------------------------------------------
+    #                                Trade Settings
+    # ------------------------------------------------------------------------------
     rr: float = Field(1.5, description="Multiplier for the risk-to-reward ratio. Optional. Default: 1.5.")
 
     risk_percentage: float = Field(
