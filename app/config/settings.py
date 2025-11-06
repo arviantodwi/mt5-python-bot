@@ -90,6 +90,9 @@ class Settings(BaseSettings):
         "fixed", description="Take-profit management policy. Optional. Default: fixed."
     )
 
+    atr_sl_multiplier: float = 1.0
+    """ATR multiplier for initial and trailing SL"""
+
     # ------------------------------------------------------------------------------
     #                                 Bot Settings
     # ------------------------------------------------------------------------------

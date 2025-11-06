@@ -304,3 +304,47 @@ class MT5Client:
             time_utc=time_utc,
             reason=reason,
         )
+
+    def modify_position_sl_tp(
+        self,
+        symbol: str,
+        sl: Optional[float] = None,
+        tp: Optional[float] = None,
+        ticket: Optional[int] = None,
+    ) -> bool:
+        """
+        Modify SL/TP of an open position. If `ticket` is not provided, the first
+        open position for `symbol` is used.
+
+        Returns True on success, False otherwise.
+        """
+        if ticket is None:
+            positions = mt5.positions_get(symbol=symbol)
+            if not positions:
+                logger.warning("modify_position_sl_tp: no open position for %s", symbol)
+                return False
+            ticket = positions[0].ticket
+
+        request = {
+            "action": mt5.TRADE_ACTION_SLTP,
+            "position": ticket,
+            "sl": sl if sl is not None else 0.0,
+            "tp": tp if tp is not None else 0.0,
+            "symbol": symbol,
+        }
+        result = mt5.order_send(request)
+        if result is None:
+            logger.error("modify_position_sl_tp: order_send returned None")
+            return False
+
+        if result.retcode != mt5.TRADE_RETCODE_DONE:
+            logger.error(
+                "modify_position_sl_tp: retcode=%s comment=%s request=%s",
+                result.retcode,
+                getattr(result, "comment", ""),
+                request,
+            )
+            return False
+
+        logger.info("modify_position_sl_tp: %s ticket=%s sl=%s tp=%s OK", symbol, ticket, sl, tp)
+        return True

@@ -332,12 +332,14 @@ class CandleMonitorService:
                 return
 
             meta = self._mt5.get_symbol_meta(self._symbol)
-            plan = self._planner.from_last4(
+            plan = self._planner.build_from_last4(
                 symbol=self._symbol,
                 side=sig.side,  # enum from domain/signals.py
                 last4=self._candles_4,
                 meta=meta,
                 signal_time_utc=sig.candle_time_utc,
+                indicators=snapshot,
+                price_ref=None,
             )
             if not plan:
                 logger.info("Planning rejected %s signal (policy/constraints).", self._symbol)
