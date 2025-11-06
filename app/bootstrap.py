@@ -62,11 +62,7 @@ def run() -> None:
         risk = RiskService(risk_percentage=settings.risk_percentage)
 
         # Order Planner
-        planner = OrderPlannerService(
-            rr=settings.rr,
-            nudge_mode=settings.sl_nudge_mode,
-            nudge_factor=settings.sl_nudge_factor,
-        )
+        planner = OrderPlannerService(settings.rr)
 
         # Position Guard
         guard = PositionGuardService(

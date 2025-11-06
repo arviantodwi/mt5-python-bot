@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Deque, Literal, Optional
+from typing import Deque, Optional
 
 from app.config.settings import Settings
 from app.domain.indicators import IndicatorsSnapshot
@@ -18,8 +18,6 @@ class OrderPlannerService:
     """
 
     rr: float
-    nudge_mode: Literal["off", "conservative", "flexible"] = "conservative"
-    nudge_factor: float = 1.5  # used only in conservative
 
     def build_from_last4(
         self,
