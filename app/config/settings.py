@@ -67,7 +67,26 @@ class Settings(BaseSettings):
         description='Maximum allowed widening multiplier for conservative nudge mode. Ignored if SL_NUDGE_MODE="off" or "flexible". Optional. Default: 1.5.',
     )
 
-    # Bot settings
+    enable_breakeven_sl: bool = Field(
+        False,
+        description="Enable automatic move of stop-loss to break-even once price reaches 1-Reward level. Optional. Default: False.",
+    )
+
+    commission_per_lot: float = Field(
+        0.0, description="Commission charged by the broker per 1.00 lot, in account currency. Optional. Default: 0.0."
+    )
+
+    # Supported values:
+    # "fixed"  -> place a static take-profit at the RR-based distance; no trailing.
+    # "trail"  -> do not place a hard TP; trail profits with a dynamic level and close when hit.
+    # "hybrid" -> start with a fixed TP, then switch to trailing after price moves favorably.
+    take_profit_mode: Literal["fixed", "trail", "hybrid"] = Field(
+        "fixed", description="Take-profit management policy. Optional. Default: fixed."
+    )
+
+    # ------------------------------------------------------------------------------
+    #                                 Bot Settings
+    # ------------------------------------------------------------------------------
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
         "INFO", description="Logging level to show in file and console. Optional. Default: INFO"
     )
