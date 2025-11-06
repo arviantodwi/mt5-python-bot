@@ -252,6 +252,8 @@ class CandleMonitorService:
         """
         Feed the just-processed CLOSED candle into the indicators pipeline and log readiness.
         No trading decisions here, only pure telemetry, kept at DEBUG level when ready.
+        - Trading 'ready' is still defined by EMA200 + MACD histogram.
+        - ATR14 is logged for visibility; its warmup does NOT block trading signals.
         """
         if self._indicators is None:
             return None
@@ -260,26 +262,39 @@ class CandleMonitorService:
             self._symbol_digits = self._mt5.get_symbol_meta(self._symbol).digits
 
         snap = self._indicators.on_closed_candle(candle)
+
+        # Warmup logging (EMA + MACD gate, ATR included only as telemetry, kept at DEBUG to avoid noise)
         if snap.ema200 is None or snap.histogram is None:
-            # Warming up: log remaining bars needed (kept at DEBUG to avoid noise).
-            logger.debug(
-                "Indicators warming | ema200_missing=%d macd_histogram_missing=%d",
-                snap.bars_until_ready_ema200,
-                snap.bars_until_ready_macd_histogram,
-            )
+            # Include ATR warmup info if ATR is still seeding
+            atr_missing = snap.bars_until_ready_atr14 if getattr(snap, "bars_until_ready_atr14", 0) else 0
+            if snap.atr14 is None and atr_missing > 0:
+                logger.debug(
+                    "Indicators warming | ema200_missing=%d macd_histogram_missing=%d atr14_missing=%d",
+                    snap.bars_until_ready_ema200,
+                    snap.bars_until_ready_macd_histogram,
+                    atr_missing,
+                )
+            else:
+                logger.debug(
+                    "Indicators warming | ema200_missing=%d macd_histogram_missing=%d",
+                    snap.bars_until_ready_ema200,
+                    snap.bars_until_ready_macd_histogram,
+                )
             return snap
 
+        # Ready telemetry
         d = self._symbol_digits + 1
         ema_format = f"%.{d}f"
         macd_format = "%.6f"
-        # log_prefix = "Indicators ready" if not self._announced_ready else "Indicators"
+        atr_format = f"%.{d}f"
+
         logger.debug(
-            # Only the MACD Histogram value is shown in the log. To show the MACD line and signal
+            # MACD: Only the Histogram value is shown in the log. To show the MACD line and signal
             # values, add `macd_format % snap.macd` and `macd_format % snap.signal`.
-            "Indicators | EMA200={} MACD Histogram={}".format(
-                # log_prefix,
+            "Indicators | EMA200={} MACD Histogram={} ATR14={}".format(
                 ema_format % snap.ema200,
                 macd_format % snap.histogram,
+                atr_format % snap.atr14 if snap.atr14 is not None else "None (warming)",
             ),
         )
         if not self._announced_ready:
