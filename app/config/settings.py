@@ -102,7 +102,7 @@ class Settings(BaseSettings):
     atr_sl_multiplier: float = 2.5
     """ATR multiplier for initial SL"""
 
-    atr_trail_multiplier: float = 1.0
+    atr_trail_multiplier: float = 0.8
     """ATR multiplier for trailing SL"""
 
     # ------------------------------------------------------------------------------
