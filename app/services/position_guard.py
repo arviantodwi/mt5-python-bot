@@ -181,7 +181,7 @@ class PositionGuardService:
             ok = self.mt5.modify_position_sl_tp(
                 symbol=self.symbol,
                 sl=candidate_sl,
-                tp=current_tp if settings.take_profit_mode == "hybrid" else current_tp,
+                tp=current_tp if settings.take_profit_mode == "hybrid" else None,
                 ticket=pos.ticket,
             )
             if ok:
@@ -201,7 +201,7 @@ class PositionGuardService:
             ok = self.mt5.modify_position_sl_tp(
                 symbol=self.symbol,
                 sl=candidate_sl,
-                tp=current_tp if settings.take_profit_mode == "hybrid" else current_tp,
+                tp=current_tp if settings.take_profit_mode == "hybrid" else None,
                 ticket=pos.ticket,
             )
             if ok:
