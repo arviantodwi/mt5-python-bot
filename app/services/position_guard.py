@@ -108,7 +108,7 @@ class PositionGuardService:
             tick_value=meta.tick_value,
             tick_size=meta.tick_size,
             commission_per_lot=settings.commission_per_lot,
-            is_round_trip=False,  # assume per-side commission → cover round trip (if set)
+            is_round_trip=True,  # assume per-side commission → cover round trip (if set)
         )
 
         # Respect broker minimum distance (stops_level)
