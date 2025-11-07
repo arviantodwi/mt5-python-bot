@@ -169,6 +169,8 @@ class CandleMonitorService:
                                 self._last_seen_epoch = candle.epoch
                                 snap = self._update_indicators(candle)
                                 is_live = candle.epoch == new_epoch  # only the latest is truly live
+                                if self._guard and snap is not None:
+                                    self._guard.on_closed_candle(candle, snap)
                                 self._maybe_emit_signal(candle, snap, is_live_bar=is_live)
                         else:
                             # At least process the newly closed bar
@@ -176,6 +178,8 @@ class CandleMonitorService:
                             self._candles_4.append(new_last_closed)
                             self._last_seen_epoch = new_epoch
                             snap = self._update_indicators(new_last_closed)
+                            if self._guard and snap is not None:
+                                self._guard.on_closed_candle(new_last_closed, snap)
                             self._maybe_emit_signal(new_last_closed, snap, is_live_bar=True)
 
                         break
@@ -195,6 +199,8 @@ class CandleMonitorService:
                     self._last_seen_epoch = candle.epoch
                     snap = self._update_indicators(candle)
                     is_live = candle.epoch == last_closed_epoch  # last one equals current last_closed
+                    if self._guard and snap is not None:
+                        self._guard.on_closed_candle(candle, snap)
                     self._maybe_emit_signal(candle, snap, is_live_bar=is_live)
             else:
                 # Fallback: process last_closed at least
@@ -202,6 +208,8 @@ class CandleMonitorService:
                 self._candles_4.append(last_closed)
                 self._last_seen_epoch = last_closed_epoch
                 snap = self._update_indicators(last_closed)
+                if self._guard and snap is not None:
+                    self._guard.on_closed_candle(last_closed, snap)
                 self._maybe_emit_signal(last_closed, snap, is_live_bar=True)
 
         except Exception as e:

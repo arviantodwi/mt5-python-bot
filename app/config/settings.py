@@ -78,6 +78,15 @@ class Settings(BaseSettings):
         description="Enable automatic move of stop-loss to break-even once price reaches 1-Reward level. Optional. Default: False.",
     )
 
+    # Supported values:
+    # "close" -> move SL to break-even when the candle close reaches or exceeds +1R (more conservative).
+    # "hl"    -> move SL to break-even when the candle's extreme (high/low) first touches +1R (earlier trigger).
+    be_trigger_price: Literal["close", "hl"] = Field(
+        "close",
+        description="Break-even trigger price reference used when `ENABLE_BREAKEVEN_SL` is enabled. Optional. Default: close.",
+    )
+    """Break-even trigger price reference used when `ENABLE_BREAKEVEN_SL` is enabled. Optional. Default: close."""
+
     commission_per_lot: float = Field(
         0.0, description="Commission charged by the broker per 1.00 lot, in account currency. Optional. Default: 0.0."
     )
@@ -90,7 +99,7 @@ class Settings(BaseSettings):
         "fixed", description="Take-profit management policy. Optional. Default: fixed."
     )
 
-    atr_sl_multiplier: float = 1.0
+    atr_sl_multiplier: float = 2.5
     """ATR multiplier for initial and trailing SL"""
 
     # ------------------------------------------------------------------------------

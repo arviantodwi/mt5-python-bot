@@ -33,6 +33,8 @@ class OpenPosition:
     lot: float
     price_open: float
     time_utc: datetime
+    sl: Optional[float] = None
+    tp: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -246,6 +248,9 @@ class MT5Client:
         rows = mt5.positions_get(symbol=symbol) or []
         out: List[OpenPosition] = []
         for position in rows:
+            sl_value = float(position.sl) if getattr(position, "sl", 0.0) else None
+            tp_value = float(position.tp) if getattr(position, "tp", 0.0) else None
+
             out.append(
                 OpenPosition(
                     ticket=int(position.ticket),
@@ -254,6 +259,8 @@ class MT5Client:
                     lot=float(position.volume),
                     price_open=float(position.price_open),
                     time_utc=datetime.fromtimestamp(int(position.time), tz=timezone.utc),
+                    sl=sl_value,
+                    tp=tp_value,
                 )
             )
         return out
