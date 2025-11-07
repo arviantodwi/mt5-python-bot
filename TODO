@@ -1,6 +1,6 @@
 MT5 Python Bot:
   Bugs:
-    □ Freeze window after position closed is not working. @high
+    ✔ Freeze window after position closed is not working. @high @started(25-11-07 23:27) @done(25-11-08 02:13) @lasted(2h46m45s)
     □ Round decimal precision of entry, SL, and TP values to symbol's digit in "Order filled" log. @low
 
   Features:
@@ -21,4 +21,4 @@ MT5 Python Bot:
   Miscellaneous:
     □ Rename all service-related file to <name>_svc.py.
     □ Remove proof-of-concept directory / files (app.bak, old tests, old docs).
-    □ Research for adding extra attributes in logging module.
+    ✔ Research for adding extra attributes in logging module. @done(25-11-08 02:15)
