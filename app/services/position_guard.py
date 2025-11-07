@@ -44,6 +44,7 @@ class PositionGuardService:
             closed_at_utc.replace(tzinfo=timezone.utc) if closed_at_utc.tzinfo is None else closed_at_utc
         )
 
+    # TODO: Simplify method
     def on_closed_candle(self, candle: Candle, snapshot: IndicatorsSnapshot) -> None:
         """
         Called once per CLOSED candle.
@@ -141,3 +142,67 @@ class PositionGuardService:
                 )
                 if ok:
                     self._be_armed_at_utc = candle.time_utc
+
+        # Trailing SL starts on candle after BE armed
+        # Mode gate: only for 'trail' or 'hybrid'
+        if settings.take_profit_mode not in ("trail", "hybrid"):
+            return
+        # Require: BE already armed on a previous candle
+        if self._be_armed_at_utc is None or candle.time_utc <= self._be_armed_at_utc:
+            return
+        # Require: ATR(14) available
+        if snapshot.atr14 is None:
+            return
+
+        # Trail distance from ATR
+        trail_multiplier = settings.atr_trail_multiplier
+        if trail_multiplier <= 0.0:
+            return
+        trail_distance = snapshot.atr14 * trail_multiplier
+
+        # Broker constraints
+        min_distance = meta.stops_level * meta.tick_size
+
+        # BE clamp (never trail past BE in the wrong direction)
+        if side == Side.BUY:
+            # Propose candidate from current close minus trail distance, but not below BE
+            candidate_sl = max(be_price, candle.close - trail_distance)
+            # Respect minimum broker distance
+            if (candle.close - candidate_sl) < min_distance:
+                candidate_sl = max(be_price, candle.close - min_distance)
+            # Round to symbol precision
+            candidate_sl = round(candidate_sl, meta.digits)
+            # Never loosen: only tighten upward
+            if current_sl is not None and candidate_sl <= current_sl:
+                return
+            # Optional: skip micro-changes (< 1 tick)
+            if current_sl is not None and (candidate_sl - current_sl) < meta.tick_size:
+                return
+            ok = self.mt5.modify_position_sl_tp(
+                symbol=self.symbol,
+                sl=candidate_sl,
+                tp=current_tp if settings.take_profit_mode == "hybrid" else current_tp,
+                ticket=pos.ticket,
+            )
+            if ok:
+                # (no change to _be_armed_at_utc; trailing can continue each candle)
+                pass
+        else:
+            # SELL: close + trail; clamp above to BE
+            candidate_sl = min(be_price, candle.close + trail_distance)
+            if (candidate_sl - candle.close) < min_distance:
+                candidate_sl = min(be_price, candle.close + min_distance)
+            candidate_sl = round(candidate_sl, meta.digits)
+            # Never loosen: only tighten downward
+            if current_sl is not None and candidate_sl >= current_sl:
+                return
+            if current_sl is not None and (current_sl - candidate_sl) < meta.tick_size:
+                return
+            ok = self.mt5.modify_position_sl_tp(
+                symbol=self.symbol,
+                sl=candidate_sl,
+                tp=current_tp if settings.take_profit_mode == "hybrid" else current_tp,
+                ticket=pos.ticket,
+            )
+            if ok:
+                pass

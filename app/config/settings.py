@@ -100,7 +100,10 @@ class Settings(BaseSettings):
     )
 
     atr_sl_multiplier: float = 2.5
-    """ATR multiplier for initial and trailing SL"""
+    """ATR multiplier for initial SL"""
+
+    atr_trail_multiplier: float = 1.0
+    """ATR multiplier for trailing SL"""
 
     # ------------------------------------------------------------------------------
     #                                 Bot Settings
