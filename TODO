@@ -4,13 +4,14 @@ MT5 Python Bot:
     □ Round decimal precision of entry, SL, and TP values to symbol's digit in "Order filled" log. @low
 
   Features:
-    □ Brek-even and trailing stop loss. @started(25-11-06 11:33)
+    ✔ Brek-even and trailing stop loss. @started(25-11-06 11:33) @done(25-11-07 22:29) @lasted(1d10h56m21s)
     □ Multi-symbols support. @low
     □ Front test between range of two date.
     □ Persist freeze window state so bot can recover it on restart.
 
   Enhancement:
     □ Implement exponential backoff for candle hydration retries.
+    □ Simplify `on_closed_candle` method in `services/position_guard.py`. @low
 
   Testing:
     □ Setup Pytest with coverage support

@@ -1,3 +1,11 @@
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
+
+
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 # MT5 Python Bot
 
 This project is a Python-based trading bot that connects to the MetaTrader 5 (MT5) platform. It is designed to automate trading strategies, retrieve real-time market data, and execute trades based on a predefined set of rules.
@@ -17,6 +25,9 @@ This project is a Python-based trading bot that connects to the MetaTrader 5 (MT
 - [Development](#development)
   - [Core Components](#core-components)
   - [Strategy](#strategy)
+    - [Signal Generation Logic](#signal-generation-logic)
+    - [Trade and Risk Management](#trade-and-risk-management)
+    - [In-Trade Management](#in-trade-management)
 
 ## Features
 
@@ -73,15 +84,13 @@ The project is organized as follows:
     ```
 
 3.  **Activate the virtual environment:**
-
-    - **Windows**:
+    ```bash
+    .\venv\Scripts\activate
+    ```
+    <!-- - **macOS/Linux:**
       ```bash
-      .\venv\Scripts\activate
-      ```
-      <!-- - **macOS/Linux:**
-        ```bash
-        source venv/bin/activate
-        ``` -->
+      source venv/bin/activate
+      ``` -->
 
 4.  **Install the required packages:**
 
@@ -159,4 +168,53 @@ The workflow is triggered on pushes to the `main` branch and performs the follow
 
 ### Strategy
 
-The trading strategy is implemented within the `app/domain/strategy.py` file. It uses a combination of technical indicators, including the 200-period Exponential Moving Average (EMA) and the MACD histogram, to identify trading opportunities. The core logic looks for specific patterns in candlestick formations and indicator values to generate buy or sell signals.
+The trading strategy is a multi-faceted system that combines trend-following, momentum analysis, and a specific candlestick pattern to generate high-probability trade signals. The entire logic is defined in `app/domain/strategy.py`, with trade and risk management handled by various services in the `app/services/` directory.
+
+#### Signal Generation Logic
+
+A signal is generated only when a strict set of criteria, evaluated over a moving window of four closed candles, is met.
+
+1.  **Trend Filter**: The 200-period Exponential Moving Average (EMA) on the closing price acts as the primary trend filter. Trades are only taken in the direction of the trend.
+    -   **Bullish Bias**: The close price of the most recent candle must be above the EMA 200.
+    -   **Bearish Bias**: The close price of the most recent candle must be below the EMA 200.
+
+2.  **Momentum Confirmation**: The MACD (12, 26, 9) histogram is used to confirm that momentum is accelerating in the direction of the trend.
+    -   For a **buy signal**, the histogram values over the 4-candle window must be strictly increasing.
+    -   For a **sell signal**, the histogram values must be strictly decreasing.
+
+3.  **Candlestick Entry Pattern**: The core of the strategy is a specific 4-candle pattern that identifies a brief pullback followed by a strong continuation.
+    -   **Buy Signal Pattern**:
+        -   The first candle (`c1`) must be bearish (close < open).
+        -   The subsequent three candles (`c2`, `c3`, `c4`) must be predominantly bullish. Any candle that is not a Doji must be bullish.
+        -   The closing prices across all four candles must be strictly increasing.
+        -   A maximum of one Doji is allowed among candles `c2`, `c3`, and `c4`.
+    -   **Sell Signal Pattern**:
+        -   The first candle (`c1`) must be bullish (close > open).
+        -   The subsequent three candles (`c2`, `c3`, `c4`) must be predominantly bearish. Any candle that is not a Doji must be bearish.
+        -   The closing prices across all four candles must be strictly decreasing.
+        -   A maximum of one Doji is allowed among candles `c2`, `c3`, and `c4`.
+
+#### Trade and Risk Management
+
+Once a valid signal is detected on a live candle, the bot employs a sophisticated risk management framework.
+
+-   **Position Sizing**: The lot size is dynamically calculated to risk a fixed percentage of the account balance on each trade (e.g., 1%). The calculation accounts for the stop-loss distance and the symbol's tick value to ensure consistent risk exposure.
+
+-   **Stop-Loss Placement**:
+    -   The initial stop-loss is placed at the lowest low (for buys) or highest high (for sells) of the 4-candle signal pattern.
+    -   **ATR Widening**: To account for market volatility, the stop-loss can be automatically widened if the initial placement is too close to the entry price. The final stop distance will be at least `ATR_SL_MULTIPLIER` times the current ATR(14) value.
+
+-   **Take-Profit Target**: The take-profit level is calculated based on a fixed risk-to-reward ratio (e.g., 1.5:1). The profit target is set at `RR` times the stop-loss distance from the entry price.
+
+-   **Broker Constraints**: The bot respects the broker's minimum stop distance (`stops_level`). If the planned stop-loss is too close to the entry price, the bot can be configured to either skip the trade or "nudge" the stop-loss outward to satisfy the requirement.
+
+#### In-Trade Management
+
+The bot also manages the lifecycle of an open position with the following rules:
+
+-   **Single Position Limit**: Only one trade is allowed to be open at a time for the configured symbol, preventing over-exposure.
+-   **Post-Trade Freeze Window**: After a trade is closed (for a win or loss), a configurable "freeze" period is activated. No new trades can be opened until this cooldown period expires, which helps to avoid revenge trading after a loss or irrational re-entry.
+-   **Automatic Break-Even**: If enabled, the stop-loss is automatically moved to the entry price (plus an offset to cover commissions) once the trade reaches a +1R profit. This secures the position from turning into a loss.
+-   **ATR Trailing Stop-Loss**: For profit maximization, an optional ATR-based trailing stop-loss can be enabled. Once the trade is in profit and the break-even stop has been set, the stop-loss will trail behind the price at a distance of `ATR_TRAIL_MULTIPLIER` times the ATR value, locking in gains as the trend continues.
+
+All strategy parameters, from the risk percentage to the take-profit mode, are fully configurable via the `.env` file.
