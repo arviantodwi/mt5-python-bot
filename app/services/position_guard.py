@@ -25,6 +25,7 @@ class PositionGuardService:
     symbol: str
     freeze_hours: Optional[float] = None
     _last_closed_at_utc: Optional[datetime] = None
+    _open_position_ticket: Optional[int] = None
     # Optional: remember when BE was armed; useful if trailing should start on the next candle
     _be_armed_at_utc: Optional[datetime] = None
 
@@ -44,24 +45,48 @@ class PositionGuardService:
             closed_at_utc.replace(tzinfo=timezone.utc) if closed_at_utc.tzinfo is None else closed_at_utc
         )
 
-    # TODO: Simplify method
     def on_closed_candle(self, candle: Candle, snapshot: IndicatorsSnapshot) -> None:
         """
-        Called once per CLOSED candle.
-        If ENABLE_BREAKEVEN_SL is True and the open position has progressed to +1R,
-        move SL to the commission-aware break-even price (respecting broker stops_level and symbol digits).
+        Called once per CLOSED candle. Manages position lifecycle:
+        - Detects when a new position is opened and starts tracking it.
+        - Detects when the tracked position is closed and triggers the freeze window.
+        - If a position is open, manages break-even and trailing stop-loss adjustments.
         """
-        settings = Settings()  # type: ignore
+        settings = Settings.model_validate({})
+        positions = self.mt5.get_positions(self.symbol)
+        position_tickets = {p.ticket for p in positions}
+
+        # State: A position was being tracked
+        if self._open_position_ticket is not None:
+            # Transition: Tracked position has been closed
+            if self._open_position_ticket not in position_tickets:
+                self.mark_position_closed(candle.time_utc + timedelta(minutes=settings.timeframe))
+                self._open_position_ticket = None
+                self._be_armed_at_utc = None  # Reset break-even state
+                return  # No further processing needed for this candle
+
+            # State: Tracked position is still open
+            # Find the position object to proceed with in-trade management
+            open_position = next((p for p in positions if p.ticket == self._open_position_ticket), None)
+            if open_position:
+                self._manage_in_trade_sl(open_position, candle, snapshot)
+
+        # State: No position was being tracked
+        else:
+            # Transition: A new position has just been opened
+            if positions:
+                new_position = positions[0]
+                self._open_position_ticket = new_position.ticket
+
+    def _manage_in_trade_sl(self, pos, candle: Candle, snapshot: IndicatorsSnapshot) -> None:
+        """
+        Handles break-even and trailing stop-loss logic for an open position.
+        """
+        settings = Settings.model_validate({})
 
         # Feature gate
         if not settings.enable_breakeven_sl:
             return
-
-        # Single-symbol policy; fetch open position (if any)
-        positions = self.mt5.get_positions(self.symbol)
-        if not positions:
-            return
-        pos = positions[0]  # first/only position for this symbol
 
         # Derive side, entry, current SL/TP, lot
         side = pos.side
