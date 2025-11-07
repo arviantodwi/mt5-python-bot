@@ -11,7 +11,11 @@ MT5 Python Bot:
 
   Enhancement:
     □ Implement exponential backoff for candle hydration retries.
-    □ Simplify `on_closed_candle` method in `services/position_guard.py`. @low
+    □ Simplify `_manage_in_trade_sl` method in `services/position_guard.py`. @low
+    □ Logging improvement
+      □ Add extra context -> tag: [%(tag)s]
+      □ Clean up existing log messages
+      □ Add more log messages for core functions
 
   Testing:
     □ Setup Pytest with coverage support
