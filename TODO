@@ -1,0 +1,23 @@
+MT5 Python Bot:
+  Bugs:
+    □ Freeze window after position closed is not working. @high
+    □ Round decimal precision of entry, SL, and TP values to symbol's digit in "Order filled" log. @low
+
+  Features:
+    □ Brek-even and trailing stop loss. @started(25-11-06 11:33)
+    □ Multi-symbols support. @low
+    □ Front test between range of two date.
+    □ Persist freeze window state so bot can recover it on restart.
+
+  Enhancement:
+    □ Implement exponential backoff for candle hydration retries.
+
+  Testing:
+    □ Setup Pytest with coverage support
+    □ Add Unit Tests
+    □ Add Integration Test
+
+  Miscellaneous:
+    □ Rename all service-related file to <name>_svc.py.
+    □ Remove proof-of-concept directory / files (app.bak, old tests, old docs).
+    □ Research for adding extra attributes in logging module.

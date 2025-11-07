@@ -52,7 +52,7 @@ class CandleMonitorService:
         self._planner = planner
         self._guard = guard
         self._executor = executor
-        self._announced_ready = False  # guard to log a one-time "indicators ready" message
+        # self._announced_ready = False  # guard to log a one-time "indicators ready" message
         self._candles_4: Deque[Candle] = deque(maxlen=4)
 
     def process_once(self) -> None:
@@ -169,6 +169,8 @@ class CandleMonitorService:
                                 self._last_seen_epoch = candle.epoch
                                 snap = self._update_indicators(candle)
                                 is_live = candle.epoch == new_epoch  # only the latest is truly live
+                                if self._guard and snap is not None:
+                                    self._guard.on_closed_candle(candle, snap)
                                 self._maybe_emit_signal(candle, snap, is_live_bar=is_live)
                         else:
                             # At least process the newly closed bar
@@ -176,6 +178,8 @@ class CandleMonitorService:
                             self._candles_4.append(new_last_closed)
                             self._last_seen_epoch = new_epoch
                             snap = self._update_indicators(new_last_closed)
+                            if self._guard and snap is not None:
+                                self._guard.on_closed_candle(new_last_closed, snap)
                             self._maybe_emit_signal(new_last_closed, snap, is_live_bar=True)
 
                         break
@@ -195,6 +199,8 @@ class CandleMonitorService:
                     self._last_seen_epoch = candle.epoch
                     snap = self._update_indicators(candle)
                     is_live = candle.epoch == last_closed_epoch  # last one equals current last_closed
+                    if self._guard and snap is not None:
+                        self._guard.on_closed_candle(candle, snap)
                     self._maybe_emit_signal(candle, snap, is_live_bar=is_live)
             else:
                 # Fallback: process last_closed at least
@@ -202,6 +208,8 @@ class CandleMonitorService:
                 self._candles_4.append(last_closed)
                 self._last_seen_epoch = last_closed_epoch
                 snap = self._update_indicators(last_closed)
+                if self._guard and snap is not None:
+                    self._guard.on_closed_candle(last_closed, snap)
                 self._maybe_emit_signal(last_closed, snap, is_live_bar=True)
 
         except Exception as e:
@@ -252,6 +260,8 @@ class CandleMonitorService:
         """
         Feed the just-processed CLOSED candle into the indicators pipeline and log readiness.
         No trading decisions here, only pure telemetry, kept at DEBUG level when ready.
+        - Trading 'ready' is still defined by EMA200 + MACD histogram.
+        - ATR14 is logged for visibility; its warmup does NOT block trading signals.
         """
         if self._indicators is None:
             return None
@@ -260,30 +270,44 @@ class CandleMonitorService:
             self._symbol_digits = self._mt5.get_symbol_meta(self._symbol).digits
 
         snap = self._indicators.on_closed_candle(candle)
+
+        # Warmup logging (EMA + MACD gate, ATR included only as telemetry, kept at DEBUG to avoid noise)
         if snap.ema200 is None or snap.histogram is None:
-            # Warming up: log remaining bars needed (kept at DEBUG to avoid noise).
-            logger.debug(
-                "Indicators warming | ema200_missing=%d macd_histogram_missing=%d",
-                snap.bars_until_ready_ema200,
-                snap.bars_until_ready_macd_histogram,
-            )
+            # Include ATR warmup info if ATR is still seeding
+            atr_missing = snap.bars_until_ready_atr14 if getattr(snap, "bars_until_ready_atr14", 0) else 0
+            if snap.atr14 is None and atr_missing > 0:
+                logger.debug(
+                    "Indicators warming | ema200_missing=%d macd_histogram_missing=%d atr14_missing=%d",
+                    snap.bars_until_ready_ema200,
+                    snap.bars_until_ready_macd_histogram,
+                    atr_missing,
+                )
+            else:
+                logger.debug(
+                    "Indicators warming | ema200_missing=%d macd_histogram_missing=%d",
+                    snap.bars_until_ready_ema200,
+                    snap.bars_until_ready_macd_histogram,
+                )
             return snap
 
+        # Ready telemetry
         d = self._symbol_digits + 1
         ema_format = f"%.{d}f"
         macd_format = "%.6f"
-        # log_prefix = "Indicators ready" if not self._announced_ready else "Indicators"
+        atr_format = f"%.{d}f"
+
         logger.debug(
-            # Only the MACD Histogram value is shown in the log. To show the MACD line and signal
+            # MACD: Only the Histogram value is shown in the log. To show the MACD line and signal
             # values, add `macd_format % snap.macd` and `macd_format % snap.signal`.
-            "Indicators | EMA200={} MACD Histogram={}".format(
-                # log_prefix,
+            "Indicators | EMA200={} MACD Histogram={} ATR14={}".format(
                 ema_format % snap.ema200,
                 macd_format % snap.histogram,
+                atr_format % snap.atr14 if snap.atr14 is not None else "None (warming)",
             ),
         )
-        if not self._announced_ready:
-            self._announced_ready = True
+
+        # if not self._announced_ready:
+        #     self._announced_ready = True
 
         return snap
 
@@ -316,12 +340,14 @@ class CandleMonitorService:
                 return
 
             meta = self._mt5.get_symbol_meta(self._symbol)
-            plan = self._planner.from_last4(
+            plan = self._planner.build_from_last4(
                 symbol=self._symbol,
                 side=sig.side,  # enum from domain/signals.py
                 last4=self._candles_4,
                 meta=meta,
                 signal_time_utc=sig.candle_time_utc,
+                indicators=snapshot,
+                price_ref=None,
             )
             if not plan:
                 logger.info("Planning rejected %s signal (policy/constraints).", self._symbol)

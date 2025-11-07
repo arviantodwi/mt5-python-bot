@@ -9,6 +9,7 @@ from typing import List, Literal, Optional
 import mt5_wrapper as mt5
 from mt5_wrapper import ORDER_TYPE_BUY, ORDER_TYPE_SELL, TRADE_ACTION_DEAL
 
+from app.config.settings import Settings
 from app.domain.models import Candle, SymbolMeta
 from app.domain.signals import SignalSide as Side
 from app.infra.timeframe import humanize_mt5_timeframe
@@ -33,6 +34,8 @@ class OpenPosition:
     lot: float
     price_open: float
     time_utc: datetime
+    sl: Optional[float] = None
+    tp: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -140,11 +143,11 @@ class MT5Client:
             raise RuntimeError(f"Symbol {symbol} not found on server")
 
         tick_value = info.trade_tick_value
-        if symbol == "XAUUSD" and info.trade_tick_value == 10.0:
+        if symbol == "XAUUSD" and info.trade_tick_value != 1.0:
             # Empirically adjust tick_value to 1.0 to match account contract size.
             if not self._initialized:
                 # Show log only when the MT5 client is not yet initialized.
-                logger.warning("Adjusting XAUUSD tick_value from 10.0 → 1.0 for accurate lot sizing.")
+                logger.warning("Adjusting XAUUSD tick_value from any float → 1.0 for accurate lot sizing.")
             tick_value = 1.0
 
         return SymbolMeta(
@@ -246,6 +249,9 @@ class MT5Client:
         rows = mt5.positions_get(symbol=symbol) or []
         out: List[OpenPosition] = []
         for position in rows:
+            sl_value = float(position.sl) if getattr(position, "sl", 0.0) else None
+            tp_value = float(position.tp) if getattr(position, "tp", 0.0) else None
+
             out.append(
                 OpenPosition(
                     ticket=int(position.ticket),
@@ -254,6 +260,8 @@ class MT5Client:
                     lot=float(position.volume),
                     price_open=float(position.price_open),
                     time_utc=datetime.fromtimestamp(int(position.time), tz=timezone.utc),
+                    sl=sl_value,
+                    tp=tp_value,
                 )
             )
         return out
@@ -270,7 +278,7 @@ class MT5Client:
         """
         Sends a market order with SL/TP. Returns OrderSendResult or None on MT5 error.
         """
-
+        settings = Settings()  # type: ignore
         order_type = ORDER_TYPE_BUY if side == Side.BUY else ORDER_TYPE_SELL
 
         request = {
@@ -281,6 +289,8 @@ class MT5Client:
             "deviation": int(deviation),
             "sl": float(sl),
             "tp": float(tp),
+            "magic": 280625,
+            "comment": f"{settings.bot_name}",
         }
 
         response = mt5.order_send(request)
@@ -304,3 +314,51 @@ class MT5Client:
             time_utc=time_utc,
             reason=reason,
         )
+
+    def modify_position_sl_tp(
+        self,
+        symbol: str,
+        sl: Optional[float] = None,
+        tp: Optional[float] = None,
+        ticket: Optional[int] = None,
+    ) -> bool:
+        """
+        Modify SL/TP of an open position. If `ticket` is not provided, the first
+        open position for `symbol` is used.
+
+        Returns True on success, False otherwise.
+        """
+        settings = Settings()  # type: ignore
+
+        if ticket is None:
+            positions = mt5.positions_get(symbol=symbol)
+            if not positions:
+                logger.warning("modify_position_sl_tp: no open position for %s", symbol)
+                return False
+            ticket = positions[0].ticket
+
+        request = {
+            "action": mt5.TRADE_ACTION_SLTP,
+            "position": ticket,
+            "sl": sl if sl is not None else 0.0,
+            "tp": tp if tp is not None else 0.0,
+            "symbol": symbol,
+            "magic": 280625,
+            "comment": f"{settings.bot_name}",
+        }
+        result = mt5.order_send(request)
+        if result is None:
+            logger.error("modify_position_sl_tp: order_send returned None")
+            return False
+
+        if result.retcode != mt5.TRADE_RETCODE_DONE:
+            logger.error(
+                "modify_position_sl_tp: retcode=%s comment=%s request=%s",
+                result.retcode,
+                getattr(result, "comment", ""),
+                request,
+            )
+            return False
+
+        logger.info("modify_position_sl_tp: %s ticket=%s sl=%s tp=%s OK", symbol, ticket, sl, tp)
+        return True

@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 
 from app.adapters.mt5_client import MT5Client
 from app.config.settings import Settings
@@ -14,7 +15,6 @@ from app.services.position_guard import PositionGuardService
 from app.services.risk import RiskService
 from app.services.scheduler import SchedulerService
 from app.services.signal import SignalService
-from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -62,18 +62,10 @@ def run() -> None:
         risk = RiskService(risk_percentage=settings.risk_percentage)
 
         # Order Planner
-        planner = OrderPlannerService(
-            rr=settings.rr,
-            nudge_mode=settings.sl_nudge_mode,
-            nudge_factor=settings.sl_nudge_factor,
-        )
+        planner = OrderPlannerService(settings.rr)
 
         # Position Guard
-        guard = PositionGuardService(
-            mt5=mt5,
-            symbol=settings.symbol,
-            freeze_hours=settings.freeze_hours,
-        )
+        guard = PositionGuardService(mt5=mt5, risk=risk, symbol=settings.symbol, freeze_hours=settings.freeze_hours)
 
         # Execution
         executor = ExecutionService(
