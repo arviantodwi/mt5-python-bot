@@ -9,6 +9,7 @@ from typing import List, Literal, Optional
 import mt5_wrapper as mt5
 from mt5_wrapper import ORDER_TYPE_BUY, ORDER_TYPE_SELL, TRADE_ACTION_DEAL
 
+from app.config.settings import Settings
 from app.domain.models import Candle, SymbolMeta
 from app.domain.signals import SignalSide as Side
 from app.infra.timeframe import humanize_mt5_timeframe
@@ -277,7 +278,7 @@ class MT5Client:
         """
         Sends a market order with SL/TP. Returns OrderSendResult or None on MT5 error.
         """
-
+        settings = Settings()  # type: ignore
         order_type = ORDER_TYPE_BUY if side == Side.BUY else ORDER_TYPE_SELL
 
         request = {
@@ -289,7 +290,7 @@ class MT5Client:
             "sl": float(sl),
             "tp": float(tp),
             "magic": 280625,
-            "comment": "MT5 Bot by Arvianto Wicaksono"
+            "comment": f"{settings.bot_name}",
         }
 
         response = mt5.order_send(request)
@@ -327,6 +328,8 @@ class MT5Client:
 
         Returns True on success, False otherwise.
         """
+        settings = Settings()  # type: ignore
+
         if ticket is None:
             positions = mt5.positions_get(symbol=symbol)
             if not positions:
@@ -341,7 +344,7 @@ class MT5Client:
             "tp": tp if tp is not None else 0.0,
             "symbol": symbol,
             "magic": 280625,
-            "comment": "MT5 Bot by Arvianto Wicaksono"
+            "comment": f"{settings.bot_name}",
         }
         result = mt5.order_send(request)
         if result is None:

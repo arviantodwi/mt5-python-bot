@@ -105,6 +105,12 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------------------
     #                                 Bot Settings
     # ------------------------------------------------------------------------------
+    bot_name: str = Field(
+        "BOTPYMT5",
+        description="Bot name, used by MT5 terminal for the comment field in order request. Optional. Default: BOTPYMT5.",
+    )
+    """Bot name, used by MT5 terminal for the comment field in order request. Optional. Default: BOTPYMT5."""
+
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
         "INFO", description="Logging level to show in file and console. Optional. Default: INFO"
     )
