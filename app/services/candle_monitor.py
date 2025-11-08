@@ -60,7 +60,7 @@ class CandleMonitorService:
 
     # TODO Implement feature to process multi symbols
     def _process_symbol(self, symbol: str) -> None:
-        settings = Settings()  # type: ignore
+        settings = Settings.model_validate({})
 
         HYDRATE_MAX_RETRIES = settings.hydrate_max_retries
         HIDRATE_RETRY_SEC = settings.hydrate_retry_sec

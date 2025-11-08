@@ -278,7 +278,7 @@ class MT5Client:
         """
         Sends a market order with SL/TP. Returns OrderSendResult or None on MT5 error.
         """
-        settings = Settings()  # type: ignore
+        settings = Settings.model_validate({})
         order_type = ORDER_TYPE_BUY if side == Side.BUY else ORDER_TYPE_SELL
 
         request = {
@@ -328,7 +328,7 @@ class MT5Client:
 
         Returns True on success, False otherwise.
         """
-        settings = Settings()  # type: ignore
+        settings = Settings.model_validate({})
 
         if ticket is None:
             positions = mt5.positions_get(symbol=symbol)

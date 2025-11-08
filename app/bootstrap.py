@@ -24,7 +24,7 @@ def run() -> None:
     clear_terminal()
 
     # Load settings
-    settings = Settings()  # type: ignore
+    settings = Settings.model_validate({})
 
     # Configure logging
     setup_logging(settings.log_level)

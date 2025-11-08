@@ -89,7 +89,7 @@ class OrderPlannerService:
         Ensure `SL distance >= atr_sl_multiplier x ATR(14)`, using `entry_ref` as distance anchor.
         Widen only; never tighten. Returns the (possibly widened) SL rounded to symbol digits.
         """
-        settings = Settings()  # type: ignore
+        settings = Settings.model_validate({})
 
         # Validate ATR availability and multiplier
         k = max(0.0, float(settings.atr_sl_multiplier))
