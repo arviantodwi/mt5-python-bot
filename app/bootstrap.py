@@ -33,21 +33,7 @@ def run() -> None:
     try:
         # Initialize MT5
         mt5 = MT5Client(settings.account_user, settings.account_pass, settings.server_id, settings.terminal_path)
-        mt5.initialize()
-
-        # Ensure timeframe support
-        mt5.ensure_timeframe(settings.timeframe)
-
-        # Ensure symbol selected
-        # TODO Implement feature to process multi symbols
-        mt5.ensure_symbol_selected(settings.symbol)
-        meta = mt5.get_symbol_meta(settings.symbol)
-        logger.info(
-            f"Symbol ready: {meta.name} (digits={meta.digits}, tick_size={meta.tick_size:.{meta.digits}f}, tick_value={meta.tick_value}, lot_step={meta.lot_step}, min_lot={meta.min_lot}, stops_level={meta.stops_level}, freeze_level={meta.freeze_level})"
-        )
-
-        # Nudge the terminal to hydrate history faster at session open
-        mt5.prime_history(settings.symbol, count=1500)
+        mt5.initialize(settings.symbol, settings.timeframe, prime_count=1500)
 
         # Enable services
         # Indicators

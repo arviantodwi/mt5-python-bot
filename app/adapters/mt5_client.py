@@ -84,7 +84,7 @@ class MT5Client:
         self.timeframe = self._TIMEFRAME_FALLBACK
         atexit.register(self.shutdown)
 
-    def initialize(self) -> None:
+    def initialize(self, symbol: str, timeframe: int, prime_count: Optional[int] = None) -> None:
         if self._initialized:
             return
         if not mt5.initialize(self._terminal_path, timeout=5_000, portable=False):
@@ -96,8 +96,33 @@ class MT5Client:
             raise RuntimeError(with_mt5_error("MT5 login failed."))
 
         self._initialized = True
-        logger.debug(f"Connected to MT5 terminal version {parse_mt5_version(mt5.version())}")
-        logger.info(f'MT5 initialized and logged in to server "{self._server}" as login {self._login}')
+
+        logger.debug(f"Connected to MT5 terminal version {parse_mt5_version(mt5.version())}", extra={"tag": "TERMINAL"})
+
+        account_info = mt5.account_info()
+        login_as = f"login {self._login}"
+        if account_info:
+            login_as = f"{account_info.name} ({self._login})"
+
+        logger.info(
+            f'MT5 initialized and logged in to server "{self._server}" as {login_as}', extra={"tag": "TERMINAL"}
+        )
+
+        # Ensure timeframe support
+        self._ensure_timeframe(timeframe)
+
+        # Ensure symbol selected
+        # TODO Implement feature to process multi symbols
+        self._ensure_symbol_selected(symbol)
+        meta = self.get_symbol_meta(symbol)
+        logger.debug(
+            f"{meta.name} (digits={meta.digits}, tick_size={meta.tick_size:.{meta.digits}f}, tick_value={meta.tick_value}, lot_step={meta.lot_step}, min_lot={meta.min_lot}, stops_level={meta.stops_level}, freeze_level={meta.freeze_level})",
+            extra={"tag": "TERMINAL"},
+        )
+
+        # Nudge the terminal to hydrate history faster at session open
+        if prime_count is not None and prime_count > 0:
+            self._prime_history(symbol, count=prime_count)
 
     def shutdown(self) -> None:
         if self._initialized:
@@ -118,13 +143,13 @@ class MT5Client:
         if not self._initialized:
             raise RuntimeError("MT5 is not initialized.")
 
-    def ensure_timeframe(self, minutes: int) -> None:
+    def _ensure_timeframe(self, minutes: int) -> None:
         self._ensure_initialized()
         timeframe = self._tf_to_mt5(minutes)
         self.timeframe = timeframe
         logger.debug(f"Timeframe ensured: {humanize_mt5_timeframe(timeframe)}")
 
-    def ensure_symbol_selected(self, symbol: str) -> None:
+    def _ensure_symbol_selected(self, symbol: str) -> None:
         self._ensure_initialized()
         info = mt5.symbol_info(symbol)
         if info is None:
@@ -161,7 +186,7 @@ class MT5Client:
             freeze_level=info.trade_freeze_level,
         )
 
-    def prime_history(self, symbol: str, count: int = 1500) -> None:
+    def _prime_history(self, symbol: str, count: int = 1500) -> None:
         """Optional: trigger terminal to hydrate recent history quickly."""
         self._ensure_initialized()
         try:
