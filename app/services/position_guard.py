@@ -93,52 +93,48 @@ class PositionGuardService:
 
     def _manage_in_trade_sl(self, pos, candle: Candle, snapshot: IndicatorsSnapshot) -> None:
         """
-        Handles break-even and trailing stop-loss logic for an open position.
+        Dispatches SL management to either BE or trailing SL handlers.
         """
         settings = Settings.model_validate({})
-
-        # Feature gate
         if not settings.enable_breakeven_sl:
             return
 
-        # Derive side, entry, current SL/TP, lot
+        if self._be_armed_at_utc is None:
+            self._manage_breakeven(pos, candle)
+        else:
+            self._manage_trailing_sl(pos, candle, snapshot)
+
+    def _manage_breakeven(self, pos, candle: Candle) -> None:
+        """
+        Moves the stop-loss to a commission-aware break-even point once +1R is reached.
+        """
+        settings = Settings.model_validate({})
+        meta = self.mt5.get_symbol_meta(self.symbol)
+        price_format = f"%.{meta.digits}f"
+
         side = pos.side
         entry = float(pos.price_open)
         current_sl = float(pos.sl) if pos.sl is not None else None
         current_tp = float(pos.tp) if pos.tp is not None else None
         lot = float(pos.lot)
 
-        # Without a valid current SL, cannot measure R progress safely
         if current_sl is None or current_sl == 0.0:
             return
 
-        # Risk (R) = abs(entry - original/current SL)
         risk_distance = abs(entry - current_sl)
         if risk_distance <= 0.0:
             return
 
         if settings.be_trigger_price == "close":
-            # Progress in R using CLOSED price
-            if side == Side.BUY:
-                move = candle.close - entry
-            else:
-                move = entry - candle.close
-            r_progress = move / risk_distance
+            move = (candle.close - entry) if side == Side.BUY else (entry - candle.close)
+            if (move / risk_distance) < 1.0:
+                return
+        else:  # settings.be_trigger_price == "hl"
+            if side == Side.BUY and candle.high < entry + risk_distance:
+                return
+            if side == Side.SELL and candle.low > entry - risk_distance:
+                return
 
-            if r_progress < 1.0:
-                return  # Not yet at +1R
-        else:
-            # Progress in R using EXTREME price (high/low)
-            if side == Side.BUY:
-                reached_one_r = candle.high >= entry + risk_distance
-            else:
-                reached_one_r = candle.low <= entry - risk_distance
-
-            if not reached_one_r:
-                return  # No BE trigger yet
-
-        # Build commission-aware break-even price
-        meta = self.mt5.get_symbol_meta(self.symbol)
         be_price = self.risk.compute_be_covering_commission(
             side=side,
             entry=entry,
@@ -147,116 +143,114 @@ class PositionGuardService:
             tick_value=meta.tick_value,
             tick_size=meta.tick_size,
             commission_per_lot=settings.commission_per_lot,
-            is_round_trip=True,  # assume per-side commission → cover round trip (if set)
+            is_round_trip=True,
         )
 
-        # Respect broker minimum distance (stops_level)
         min_distance = meta.stops_level * meta.tick_size
-
-        # Propose new SL in the protective direction only (never loosen)
         if side == Side.BUY:
             candidate_sl = max(current_sl, be_price)
-            # Ensure (close - sl) >= min_distance
             if (candle.close - candidate_sl) < min_distance:
                 candidate_sl = candle.close - min_distance
-            # Round to symbol digits
+
             candidate_sl = round(candidate_sl, meta.digits)
-            # Only improve (raise SL for BUY)
-            if candidate_sl > current_sl:
-                ok = self.mt5.modify_position_sl_tp(
-                    symbol=self.symbol, sl=candidate_sl, tp=current_tp, ticket=pos.ticket
+            if candidate_sl <= current_sl:
+                return
+
+            new_tp = None if settings.take_profit_mode == "trail" else current_tp
+            ok = self.mt5.modify_position_sl_tp(symbol=self.symbol, sl=candidate_sl, tp=new_tp, ticket=pos.ticket)
+            if ok:
+                guard_logger.info(
+                    "Position %d: SL moved to BE. Original: %s, New: %s",
+                    pos.ticket,
+                    price_format % current_sl,
+                    price_format % candidate_sl,
                 )
-                if ok:
-                    guard_logger.info(
-                        "Position %d: SL moved to BE. Original SL: %.5f, New SL: %.5f",
-                        pos.ticket,
-                        current_sl,
-                        candidate_sl,
-                    )
-                    self._be_armed_at_utc = candle.time_utc
-        else:
+                self._be_armed_at_utc = candle.time_utc
+
+        else:  # side == Side.SELL
             candidate_sl = min(current_sl, be_price)
-            # Ensure (sl - close) >= min_distance
             if (candidate_sl - candle.close) < min_distance:
                 candidate_sl = candle.close + min_distance
-            candidate_sl = round(candidate_sl, meta.digits)
-            # Only improve (lower SL for SELL)
-            if candidate_sl < current_sl:
-                ok = self.mt5.modify_position_sl_tp(
-                    symbol=self.symbol, sl=candidate_sl, tp=current_tp, ticket=pos.ticket
-                )
-                if ok:
-                    price_format = f"%.{meta.digits}f"
-                    guard_logger.info(
-                        "Position %d: SL moved to BE. Original SL: %f, New SL: %f",
-                        pos.ticket,
-                        price_format % current_sl,
-                        price_format % candidate_sl,
-                    )
-                    self._be_armed_at_utc = candle.time_utc
 
-        # Trailing SL starts on candle after BE armed
-        # Mode gate: only for 'trail' or 'hybrid'
+            candidate_sl = round(candidate_sl, meta.digits)
+            if candidate_sl >= current_sl:
+                return
+
+            new_tp = None if settings.take_profit_mode == "trail" else current_tp
+            ok = self.mt5.modify_position_sl_tp(symbol=self.symbol, sl=candidate_sl, tp=new_tp, ticket=pos.ticket)
+            if ok:
+                guard_logger.info(
+                    "Position %d: SL moved to BE. Original: %s, New: %s",
+                    pos.ticket,
+                    price_format % current_sl,
+                    price_format % candidate_sl,
+                )
+                self._be_armed_at_utc = candle.time_utc
+
+    def _manage_trailing_sl(self, pos, candle: Candle, snapshot: IndicatorsSnapshot) -> None:
+        """
+        Manages trailing stop-loss for a position where break-even has already been armed.
+        """
+        settings = Settings.model_validate({})
         if settings.take_profit_mode not in ("trail", "hybrid"):
             return
-        # Require: BE already armed on a previous candle
         if self._be_armed_at_utc is None or candle.time_utc <= self._be_armed_at_utc:
             return
-        # Require: ATR(14) available
         if snapshot.atr14 is None:
             return
 
-        # Trail distance from ATR
+        meta = self.mt5.get_symbol_meta(self.symbol)
+        price_format = f"%.{meta.digits}f"
+        side = pos.side
+        entry = float(pos.price_open)
+        current_sl = float(pos.sl) if pos.sl is not None else None
+        current_tp = float(pos.tp) if pos.tp is not None else None
+        lot = float(pos.lot)
+
+        if current_sl is None or current_sl == 0.0:
+            return
+
         trail_multiplier = settings.atr_trail_multiplier
         if trail_multiplier <= 0.0:
             return
-        trail_distance = snapshot.atr14 * trail_multiplier
 
-        # Broker constraints
+        trail_distance = snapshot.atr14 * trail_multiplier
         min_distance = meta.stops_level * meta.tick_size
 
-        # BE clamp (never trail past BE in the wrong direction)
+        be_price = self.risk.compute_be_covering_commission(
+            side=side,
+            entry=entry,
+            lot=lot,
+            digits=meta.digits,
+            tick_value=meta.tick_value,
+            tick_size=meta.tick_size,
+            commission_per_lot=settings.commission_per_lot,
+            is_round_trip=True,
+        )
+
         if side == Side.BUY:
-            # Propose candidate from current close minus trail distance, but not below BE
             candidate_sl = max(be_price, candle.close - trail_distance)
-            # Respect minimum broker distance
             if (candle.close - candidate_sl) < min_distance:
                 candidate_sl = max(be_price, candle.close - min_distance)
-            # Round to symbol precision
+
             candidate_sl = round(candidate_sl, meta.digits)
-            # Never loosen: only tighten upward
-            if current_sl is not None and candidate_sl <= current_sl:
+            if candidate_sl <= current_sl or (candidate_sl - current_sl) < meta.tick_size:
                 return
-            # Optional: skip micro-changes (< 1 tick)
-            if current_sl is not None and (candidate_sl - current_sl) < meta.tick_size:
-                return
-            ok = self.mt5.modify_position_sl_tp(
-                symbol=self.symbol,
-                sl=candidate_sl,
-                tp=current_tp if settings.take_profit_mode == "hybrid" else None,
-                ticket=pos.ticket,
-            )
+
+            new_tp = None if settings.take_profit_mode == "trail" else current_tp
+            ok = self.mt5.modify_position_sl_tp(symbol=self.symbol, sl=candidate_sl, tp=new_tp, ticket=pos.ticket)
             if ok:
-                price_format = f"%.{meta.digits}f"
-                guard_logger.info("Position %d: Trailing SL updated to %f", pos.ticket, price_format % candidate_sl)
-                # (no change to _be_armed_at_utc; trailing can continue each candle)
+                guard_logger.info("Position %d: Trailing SL updated to %s", pos.ticket, price_format % candidate_sl)
         else:
-            # SELL: close + trail; clamp above to BE
             candidate_sl = min(be_price, candle.close + trail_distance)
             if (candidate_sl - candle.close) < min_distance:
                 candidate_sl = min(be_price, candle.close + min_distance)
+
             candidate_sl = round(candidate_sl, meta.digits)
-            # Never loosen: only tighten downward
-            if current_sl is not None and candidate_sl >= current_sl:
+            if candidate_sl >= current_sl or (current_sl - candidate_sl) < meta.tick_size:
                 return
-            if current_sl is not None and (current_sl - candidate_sl) < meta.tick_size:
-                return
-            ok = self.mt5.modify_position_sl_tp(
-                symbol=self.symbol,
-                sl=candidate_sl,
-                tp=current_tp if settings.take_profit_mode == "hybrid" else None,
-                ticket=pos.ticket,
-            )
+
+            new_tp = None if settings.take_profit_mode == "trail" else current_tp
+            ok = self.mt5.modify_position_sl_tp(symbol=self.symbol, sl=candidate_sl, tp=new_tp, ticket=pos.ticket)
             if ok:
-                price_format = f"%.{meta.digits}f"
-                guard_logger.info("Position %d: Trailing SL updated to %f", pos.ticket, price_format % candidate_sl)
+                guard_logger.info("Position %d: Trailing SL updated to %s", pos.ticket, price_format % candidate_sl)
