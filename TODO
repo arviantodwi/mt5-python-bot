@@ -2,7 +2,8 @@ MT5 Python Bot:
   Bugs:
     ✔ Freeze window after position closed is not working. @high @started(25-11-07 23:27) @done(25-11-08 02:13) @lasted(2h46m45s)
     ✔ Round decimal precision of entry, SL, and TP values to symbol's digit in "Order filled" log. @low @done(25-11-10 21:34)
-    □ TP doesn't removed in trail mode once the SL move to BE.
+    ✔ TP doesn't removed in trail mode once the SL move to BE. @done(25-11-11 01:02)
+    ✔ Incorrect freeze window calculation if settings.FREEZE_HOURS value is less than 1. @done(25-11-11 01:15)
 
   Features:
     ✔ Brek-even and trailing stop loss. @started(25-11-06 11:33) @done(25-11-07 22:29) @lasted(1d10h56m21s)
@@ -13,7 +14,7 @@ MT5 Python Bot:
   Enhancement:
     ✔ Update settings instance creation to avoid typehint error. @started(25-11-08 12:38) @done(25-11-08 12:40) @lasted(2m2s)
     □ Implement exponential backoff for candle hydration retries.
-    □ Simplify `_manage_in_trade_sl` method in `services/position_guard.py`. @low
+    ✔ Simplify `_manage_in_trade_sl` method in `services/position_guard.py`. @low @done(25-11-11 01:02)
     ✔ Logging improvement @done(25-11-10 20:54)
       ✔ Add extra context -> tag: [%(tag)s] @started(25-11-08 17:06) @done(25-11-10 20:54) @lasted(2d3h48m22s)
       ✔ Clean up existing log messages @done(25-11-10 20:54)
