@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
 from typing import Deque, Iterable, Optional, cast
 
 from app.domain.indicators import IndicatorsSnapshot
 from app.domain.models import Candle
 from app.domain.signals import Bias, Signal, SignalSide
+
+_l = logging.getLogger(__name__)
+strategy_logger = logging.LoggerAdapter(_l, extra={"tag": "Strategy"})
 
 
 def compute_bias(close: float, ema200: Optional[float]) -> Bias:
@@ -74,6 +78,7 @@ def detect_pattern_and_signal(
 
     # Indicators must be ready across the window: EMA200 & MACD histogram available
     if any(s.ema200 is None or s.histogram is None for s in (s1, s2, s3, s4)):
+        strategy_logger.debug("Signal rejected: Indicators not ready.")
         return None
 
     # Determine bias using the last candle's close vs EMA200 (most recent snapshot)
@@ -110,33 +115,40 @@ def detect_pattern_and_signal(
     # Doji allowance among c2..c4, at most one doji
     doji_count = sum(1 for c in (c2, c3, c4) if is_doji(c, doji_ratio))
     if doji_count > 1:
+        strategy_logger.debug("Signal rejected: More than one Doji candle found in the pattern.")
         return None
 
     # Branch by bias with pattern rules
     if bias == Bias.BULLISH:
         # c1 must be bearish
         if not is_bear(c1):
+            strategy_logger.debug("Signal rejected: Bullish bias but C1 candle was not bearish.")
             return None
         # among c2..c4, all non-doji must be bullish
         if _count(lambda x: (not is_doji(x, doji_ratio)) and (not is_bull(x)), (c2, c3, c4)) > 0:
             return None
         # closes strictly increasing; histogram strictly increasing
         if not strictly_monotonic(closes, increasing=True):
+            strategy_logger.debug("Signal rejected: Closes were not strictly increasing.")
             return None
         if not strictly_monotonic(hist_values, increasing=True):
+            strategy_logger.debug("Signal rejected: MACD Histogram were not strictly increasing.")
             return None
         side = SignalSide.BUY
     else:  # Bias.BEARISH
         # c1 must be bullish
         if not is_bull(c1):
+            strategy_logger.debug("Signal rejected: Bearish bias but C1 candle was not bullish.")
             return None
         # among c2..c4, all non-doji must be bearish
         if _count(lambda x: (not is_doji(x, doji_ratio)) and (not is_bear(x)), (c2, c3, c4)) > 0:
             return None
         # closes strictly decreasing; histogram strictly decreasing
         if not strictly_monotonic(closes, increasing=False):
+            strategy_logger.debug("Signal rejected: Closes were not strictly decreasing.")
             return None
         if not strictly_monotonic(hist_values, increasing=False):
+            strategy_logger.debug("Signal rejected: MACD Histogram were not strictly decreasing.")
             return None
         side = SignalSide.SELL
 

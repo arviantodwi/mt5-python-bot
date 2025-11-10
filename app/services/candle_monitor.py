@@ -16,7 +16,11 @@ from app.services.order_planner import OrderPlannerService
 from app.services.position_guard import PositionGuardService
 from app.services.signal import SignalService
 
-logger = logging.getLogger(__name__)
+_l = logging.getLogger(__name__)
+candle_logger = logging.LoggerAdapter(_l, extra={"tag": "Candle"})
+guard_logger = logging.LoggerAdapter(_l, extra={"tag": "Guard"})
+indicators_logger = logging.LoggerAdapter(_l, extra={"tag": "Indicators"})
+signal_logger = logging.LoggerAdapter(_l, extra={"tag": "Signal"})
 
 
 class CandleMonitorService:
@@ -56,7 +60,10 @@ class CandleMonitorService:
         self._candles_4: Deque[Candle] = deque(maxlen=4)
 
     def process_once(self) -> None:
-        self._process_symbol(self._symbol)
+        try:
+            self._process_symbol(self._symbol)
+        except Exception as e:
+            candle_logger.exception(f"Candle monitoring failed: {e}")
 
     # TODO Implement feature to process multi symbols
     def _process_symbol(self, symbol: str) -> None:
@@ -71,7 +78,7 @@ class CandleMonitorService:
 
         latest = fetch_latest()
         if not latest:
-            logger.warning(f"No closed candle available for {symbol}")
+            candle_logger.warning(f"No closed candle available for {symbol}")
             return
 
         last_closed_epoch, last_closed = latest
@@ -105,8 +112,6 @@ class CandleMonitorService:
                 prev_epoch = self._last_seen_epoch
 
                 for i in range(HYDRATE_MAX_RETRIES):
-                    # logger.debug("Last closed candle hasn't hydrated yet (seen=%s). Retry #%d", prev_epoch, i + 1)
-
                     time.sleep(HIDRATE_RETRY_SEC)
 
                     latest_to_fill = fetch_latest()
@@ -145,7 +150,11 @@ class CandleMonitorService:
                 prev_epoch = seen
 
                 for i in range(HYDRATE_MAX_RETRIES):
-                    logger.debug("Last closed candle hasn't hydrated yet (seen=%s). Retry #%d", prev_epoch, i + 1)
+                    candle_logger.debug(
+                        "Last closed candle hasn't hydrated yet. Previous closed candle: %s. Retry #%d",
+                        datetime.fromtimestamp(prev_epoch).strftime("%H:%M:%S"),
+                        i + 1,
+                    )
 
                     time.sleep(HIDRATE_RETRY_SEC)
 
@@ -213,7 +222,7 @@ class CandleMonitorService:
                 self._maybe_emit_signal(last_closed, snap, is_live_bar=True)
 
         except Exception as e:
-            logger.exception(f"Monitor error for {symbol}: {e}")
+            candle_logger.exception(f"Monitor error for {symbol}: {e}")
 
     def _log_candle(self, symbol: str, candle: Candle) -> None:
         if self._symbol_digits is None:
@@ -233,21 +242,21 @@ class CandleMonitorService:
         close = ohlc_format % candle.close
         volume = candle.volume
 
-        logger.info(
-            "Candle {} {} (server: {}) closed".format(
+        candle_logger.info(
+            "Candle {} {} closed (server={})".format(
                 symbol,
                 local_open_time.strftime("%Y-%m-%d %H:%M:%S"),
                 server_open_time.strftime("%Y-%m-%d %H:%M:%S"),
             )
         )
-        logger.debug("OHLC & Vol | O={} H={} L={} C={} Volume={}".format(open, high, low, close, volume))
+        candle_logger.debug("OHLCV: O={}, H={}, L={}, C={}, V={}".format(open, high, low, close, volume))
 
     def _warn_if_irregular_spacing(self, candles: List[Candle]) -> None:
         if len(candles) >= 2:
             for a, b in zip(candles, candles[1:]):
                 step = int((b.time_utc - a.time_utc).total_seconds())
                 if step != self._timeframe_sec:
-                    logger.warning(
+                    candle_logger.warning(
                         "Irregular spacing (server time) between %s and %s: %s seconds (expected %s)",
                         a.time_utc.strftime("%Y-%m-%d %H:%M:%S"),
                         b.time_utc.strftime("%Y-%m-%d %H:%M:%S"),
@@ -276,15 +285,15 @@ class CandleMonitorService:
             # Include ATR warmup info if ATR is still seeding
             atr_missing = snap.bars_until_ready_atr14 if getattr(snap, "bars_until_ready_atr14", 0) else 0
             if snap.atr14 is None and atr_missing > 0:
-                logger.debug(
-                    "Indicators warming | ema200_missing=%d macd_histogram_missing=%d atr14_missing=%d",
+                indicators_logger.debug(
+                    "Indicators warming (ema200_missing=%d macd_histogram_missing=%d atr14_missing=%d)",
                     snap.bars_until_ready_ema200,
                     snap.bars_until_ready_macd_histogram,
                     atr_missing,
                 )
             else:
-                logger.debug(
-                    "Indicators warming | ema200_missing=%d macd_histogram_missing=%d",
+                indicators_logger.debug(
+                    "Indicators warming (ema200_missing=%d macd_histogram_missing=%d)",
                     snap.bars_until_ready_ema200,
                     snap.bars_until_ready_macd_histogram,
                 )
@@ -296,10 +305,10 @@ class CandleMonitorService:
         macd_format = "%.6f"
         atr_format = f"%.{d}f"
 
-        logger.debug(
+        indicators_logger.debug(
             # MACD: Only the Histogram value is shown in the log. To show the MACD line and signal
             # values, add `macd_format % snap.macd` and `macd_format % snap.signal`.
-            "Indicators | EMA200={} MACD Histogram={} ATR14={}".format(
+            "EMA200={}, MACD Histogram={}, ATR14={}".format(
                 ema_format % snap.ema200,
                 macd_format % snap.histogram,
                 atr_format % snap.atr14 if snap.atr14 is not None else "None (warming)",
@@ -326,10 +335,10 @@ class CandleMonitorService:
 
             # Guard rails: single open position & freeze window
             if self._guard and self._guard.has_open_position():
-                logger.info("Skip %s signal: position already open.", self._symbol)
+                guard_logger.info("Skip %s signal: position already open.", self._symbol)
                 return
             if self._guard and self._guard.is_in_freeze(datetime.now(timezone.utc)):
-                logger.info("Skip %s signal: in freeze window.", self._symbol)
+                guard_logger.info("Skip %s signal: in freeze window.", self._symbol)
                 return
 
             # Build order plan from the last 4 candles (strategy’s reference window)
@@ -350,7 +359,7 @@ class CandleMonitorService:
                 price_ref=None,
             )
             if not plan:
-                logger.info("Planning rejected %s signal (policy/constraints).", self._symbol)
+                guard_logger.info("Planning rejected %s signal (policy/constraints).", self._symbol)
                 return
 
             # Execute market order
@@ -362,4 +371,4 @@ class CandleMonitorService:
                 return
 
         except Exception as e:
-            logger.exception("Signal evaluation failed: %s", e)
+            signal_logger.exception("Signal evaluation failed: %s", e)

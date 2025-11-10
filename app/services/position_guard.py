@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -9,7 +10,11 @@ from app.config.settings import Settings
 from app.domain.indicators import IndicatorsSnapshot
 from app.domain.models import Candle
 from app.domain.signals import SignalSide as Side
+from app.infra.clock import JAKARTA_TZ
 from app.services.risk import RiskService
+
+_l = logging.getLogger(__name__)
+guard_logger = logging.LoggerAdapter(_l, extra={"tag": "Guard"})
 
 
 @dataclass
@@ -44,6 +49,13 @@ class PositionGuardService:
         self._last_closed_at_utc = (
             closed_at_utc.replace(tzinfo=timezone.utc) if closed_at_utc.tzinfo is None else closed_at_utc
         )
+        if self.freeze_hours is not None:
+            freeze_end_time = self._last_closed_at_utc + timedelta(hours=self.freeze_hours)
+            guard_logger.info(
+                "Position closed. Freeze window active until %s (%.1f hours)",
+                freeze_end_time.astimezone(JAKARTA_TZ).strftime("%Y-%m-%d %H:%M:%S"),
+                self.freeze_hours,
+            )
 
     def on_closed_candle(self, candle: Candle, snapshot: IndicatorsSnapshot) -> None:
         """
@@ -77,6 +89,7 @@ class PositionGuardService:
             if positions:
                 new_position = positions[0]
                 self._open_position_ticket = new_position.ticket
+                guard_logger.info("Now tracking new position with ticket: %d", new_position.ticket)
 
     def _manage_in_trade_sl(self, pos, candle: Candle, snapshot: IndicatorsSnapshot) -> None:
         """
@@ -130,6 +143,7 @@ class PositionGuardService:
             side=side,
             entry=entry,
             lot=lot,
+            digits=meta.digits,
             tick_value=meta.tick_value,
             tick_size=meta.tick_size,
             commission_per_lot=settings.commission_per_lot,
@@ -153,6 +167,12 @@ class PositionGuardService:
                     symbol=self.symbol, sl=candidate_sl, tp=current_tp, ticket=pos.ticket
                 )
                 if ok:
+                    guard_logger.info(
+                        "Position %d: SL moved to BE. Original SL: %.5f, New SL: %.5f",
+                        pos.ticket,
+                        current_sl,
+                        candidate_sl,
+                    )
                     self._be_armed_at_utc = candle.time_utc
         else:
             candidate_sl = min(current_sl, be_price)
@@ -166,6 +186,13 @@ class PositionGuardService:
                     symbol=self.symbol, sl=candidate_sl, tp=current_tp, ticket=pos.ticket
                 )
                 if ok:
+                    price_format = f"%.{meta.digits}f"
+                    guard_logger.info(
+                        "Position %d: SL moved to BE. Original SL: %f, New SL: %f",
+                        pos.ticket,
+                        price_format % current_sl,
+                        price_format % candidate_sl,
+                    )
                     self._be_armed_at_utc = candle.time_utc
 
         # Trailing SL starts on candle after BE armed
@@ -210,8 +237,9 @@ class PositionGuardService:
                 ticket=pos.ticket,
             )
             if ok:
+                price_format = f"%.{meta.digits}f"
+                guard_logger.info("Position %d: Trailing SL updated to %f", pos.ticket, price_format % candidate_sl)
                 # (no change to _be_armed_at_utc; trailing can continue each candle)
-                pass
         else:
             # SELL: close + trail; clamp above to BE
             candidate_sl = min(be_price, candle.close + trail_distance)
@@ -230,4 +258,5 @@ class PositionGuardService:
                 ticket=pos.ticket,
             )
             if ok:
-                pass
+                price_format = f"%.{meta.digits}f"
+                guard_logger.info("Position %d: Trailing SL updated to %f", pos.ticket, price_format % candidate_sl)

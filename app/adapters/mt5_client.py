@@ -16,7 +16,8 @@ from app.infra.timeframe import humanize_mt5_timeframe
 
 from .mt5_utils import parse_mt5_version, with_mt5_error
 
-logger = logging.getLogger(__name__)
+_l = logging.getLogger(__name__)
+client_logger = logging.LoggerAdapter(_l, extra={"tag": "Client"})
 
 
 @dataclass(frozen=True)
@@ -97,16 +98,14 @@ class MT5Client:
 
         self._initialized = True
 
-        logger.debug(f"Connected to MT5 terminal version {parse_mt5_version(mt5.version())}", extra={"tag": "TERMINAL"})
+        client_logger.info(f"Connected to MT5 terminal version {parse_mt5_version(mt5.version())}")
 
         account_info = mt5.account_info()
         login_as = f"login {self._login}"
         if account_info:
             login_as = f"{account_info.name} ({self._login})"
 
-        logger.info(
-            f'MT5 initialized and logged in to server "{self._server}" as {login_as}', extra={"tag": "TERMINAL"}
-        )
+        client_logger.info(f'MT5 initialized and logged in to server "{self._server}" as {login_as}')
 
         # Ensure timeframe support
         self._ensure_timeframe(timeframe)
@@ -115,9 +114,8 @@ class MT5Client:
         # TODO Implement feature to process multi symbols
         self._ensure_symbol_selected(symbol)
         meta = self.get_symbol_meta(symbol)
-        logger.debug(
-            f"{meta.name} (digits={meta.digits}, tick_size={meta.tick_size:.{meta.digits}f}, tick_value={meta.tick_value}, lot_step={meta.lot_step}, min_lot={meta.min_lot}, stops_level={meta.stops_level}, freeze_level={meta.freeze_level})",
-            extra={"tag": "TERMINAL"},
+        client_logger.debug(
+            f"{meta.name} (digits={meta.digits}, tick_size={meta.tick_size:.{meta.digits}f}, tick_value={meta.tick_value}, lot_step={meta.lot_step}, min_lot={meta.min_lot}, stops_level={meta.stops_level}, freeze_level={meta.freeze_level})"
         )
 
         # Nudge the terminal to hydrate history faster at session open
@@ -130,12 +128,14 @@ class MT5Client:
                 mt5.shutdown()
             finally:
                 self._initialized = False
-                logger.info("MT5 shutdown complete.")
+                client_logger.info("MT5 shutdown complete.")
 
     def _tf_to_mt5(self, minutes: int) -> int:
         timeframe = self._MINUTE_TO_MT5_TIMEFRAME.get(minutes)
         if timeframe is None:
-            logger.warning(f"Unsupported timeframe minutes: {minutes}. Fallback to {self._TIMEFRAME_FALLBACK} minutes.")
+            client_logger.warning(
+                f"Unsupported timeframe minutes: {minutes}. Fallback to {self._TIMEFRAME_FALLBACK} minutes."
+            )
             timeframe = self._TIMEFRAME_FALLBACK
         return timeframe
 
@@ -147,7 +147,7 @@ class MT5Client:
         self._ensure_initialized()
         timeframe = self._tf_to_mt5(minutes)
         self.timeframe = timeframe
-        logger.debug(f"Timeframe ensured: {humanize_mt5_timeframe(timeframe)}")
+        client_logger.info(f"Timeframe ensured: {humanize_mt5_timeframe(timeframe)}")
 
     def _ensure_symbol_selected(self, symbol: str) -> None:
         self._ensure_initialized()
@@ -159,7 +159,7 @@ class MT5Client:
             if not mt5.symbol_select(symbol, enabled=True):
                 raise RuntimeError(f"Cannot select symbol {symbol}")
 
-        logger.debug(f"Symbol ensured: {symbol}")
+        client_logger.info(f"Symbol ensured: {symbol}")
 
     def get_symbol_meta(self, symbol: str) -> SymbolMeta:
         self._ensure_initialized()
@@ -172,7 +172,7 @@ class MT5Client:
             # Empirically adjust tick_value to 1.0 to match account contract size.
             if not self._initialized:
                 # Show log only when the MT5 client is not yet initialized.
-                logger.warning("Adjusting XAUUSD tick_value from any float → 1.0 for accurate lot sizing.")
+                client_logger.warning("Adjusting XAUUSD tick_value from any float → 1.0 for accurate lot sizing.")
             tick_value = 1.0
 
         return SymbolMeta(
@@ -191,7 +191,7 @@ class MT5Client:
         self._ensure_initialized()
         try:
             mt5.copy_rates_from_pos(symbol, self.timeframe, 0, count)
-            logger.debug("History primed for %s (%d bars)", symbol, count)
+            client_logger.info("History primed for %s (%d bars)", symbol, count)
         except Exception:
             pass
 
@@ -358,9 +358,11 @@ class MT5Client:
         if ticket is None:
             positions = mt5.positions_get(symbol=symbol)
             if not positions:
-                logger.warning("modify_position_sl_tp: no open position for %s", symbol)
+                client_logger.warning("Modify position reverted: no open position for %s", symbol)
                 return False
             ticket = positions[0].ticket
+
+        client_logger.debug("Modifying position SL/TP: ticket=%s, sl=%s, tp=%s", ticket, sl, tp)
 
         request = {
             "action": mt5.TRADE_ACTION_SLTP,
@@ -373,17 +375,17 @@ class MT5Client:
         }
         result = mt5.order_send(request)
         if result is None:
-            logger.error("modify_position_sl_tp: order_send returned None")
+            client_logger.error("Modify position failed: order_send returned None")
             return False
 
         if result.retcode != mt5.TRADE_RETCODE_DONE:
-            logger.error(
-                "modify_position_sl_tp: retcode=%s comment=%s request=%s",
+            client_logger.error(
+                "Modify position error: retcode=%s comment=%s request=%s",
                 result.retcode,
-                getattr(result, "comment", ""),
+                getattr(result, "comment", "N/A"),
                 request,
             )
             return False
 
-        logger.info("modify_position_sl_tp: %s ticket=%s sl=%s tp=%s OK", symbol, ticket, sl, tp)
+        client_logger.info("Modify position OK for %s (ticket=%s sl=%s tp=%s)", symbol, ticket, sl, tp)
         return True

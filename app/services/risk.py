@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass
-from typing import Tuple, Optional
+from typing import Optional, Tuple
 
 from app.domain.models import SymbolMeta
 from app.domain.orders import Side
+
+_l = logging.getLogger(__name__)
+risk_logger = logging.LoggerAdapter(_l, extra={"tag": "Risk"})
 
 
 @dataclass(frozen=True)
@@ -29,6 +33,16 @@ class RiskService:
         - tick_value is the cash value per one tick_size move for 1.0 lot.
         - stop distance is measured in ticks (points = price_diff / tick_size).
         """
+
+        d = meta.digits
+        price_format = f"%.{d}f"
+        risk_logger.debug(
+            "Computing lot: balance=%.2f, entry=%f, stop_loss=%f",
+            balance,
+            price_format % entry_price,
+            price_format % stop_loss,
+        )
+
         risk_target = max(0.0, balance * self.risk_percentage)
         if risk_target <= 0:
             return 0.0, 0.0
@@ -55,6 +69,8 @@ class RiskService:
                 break
             risk_used = lot * risk_per_lot
 
+        risk_logger.debug("Computed lot: lot=%.2f, risk_used=%.2f", lot, risk_used)
+
         # Round display/adapter precision to the symbol's lot_step decimals
         digits = self._decimals_from_step(meta.lot_step)
         return (round(lot, digits), risk_used)
@@ -64,6 +80,7 @@ class RiskService:
         side: Side,
         entry: float,
         lot: float,
+        digits: int,
         tick_value: float,
         tick_size: float,
         commission_per_lot: Optional[float],
@@ -88,6 +105,14 @@ class RiskService:
             return entry
 
         offset = total_commission / pnl_per_unit  # price units to cover fees
+
+        price_format = f"%.{digits}f"
+        risk_logger.debug(
+            "Break-even calculation: commission_cost=%.2f, price_offset=%f",
+            total_commission,
+            price_format % offset,
+        )
+
         if side == Side.BUY:
             return entry + offset
         else:
