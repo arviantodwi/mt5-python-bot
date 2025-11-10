@@ -37,7 +37,7 @@ class RiskService:
         d = meta.digits
         price_format = f"%.{d}f"
         risk_logger.debug(
-            "Computing lot: balance=%.2f, entry=%f, stop_loss=%f",
+            "Computing lot: balance=%.2f, entry=%s, stop_loss=%s",
             balance,
             price_format % entry_price,
             price_format % stop_loss,
@@ -108,7 +108,7 @@ class RiskService:
 
         price_format = f"%.{digits}f"
         risk_logger.debug(
-            "Break-even calculation: commission_cost=%.2f, price_offset=%f",
+            "Break-even calculation: commission_cost=%.2f, price_offset=%s",
             total_commission,
             price_format % offset,
         )

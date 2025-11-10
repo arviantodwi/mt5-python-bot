@@ -37,7 +37,7 @@ class ExecutionService:
 
         price_format = f"%.{meta.digits}f"
         exec_logger.debug(
-            "Received OrderPlan: symbol=%s, side=%s, rr=%.2f, planned_sl=%f",
+            "Received OrderPlan: symbol=%s, side=%s, rr=%.2f, planned_sl=%s",
             plan.symbol,
             plan.side.value,
             plan.rr,
@@ -90,7 +90,7 @@ class ExecutionService:
             return None
 
         exec_logger.info(
-            "%s order filled for %s (lot=%s, entry=%f, SL=%f, TP=%f, ticket=%s)",
+            "%s order filled for %s (lot=%s, entry=%s, SL=%s, TP=%s, ticket=%s)",
             plan.side.value,
             symbol,
             lot,

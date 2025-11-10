@@ -83,7 +83,7 @@ class OrderPlannerService:
 
         price_format = f"%.{meta.digits}f"
         planner_logger.debug(
-            "OrderPlan created: symbol=%s, side=%s, planned_sl=%f",
+            "OrderPlan created: symbol=%s, side=%s, planned_sl=%s",
             order_plan.symbol,
             order_plan.side.value,
             price_format % order_plan.planned_sl,
@@ -132,7 +132,7 @@ class OrderPlannerService:
 
         price_format = f"%.{meta.digits}f"
         planner_logger.debug(
-            "SL widened by ATR: original_sl=%f, widened_sl=%f", price_format % sl, price_format % widened_sl
+            "SL widened by ATR: original_sl=%s, widened_sl=%s", price_format % sl, price_format % widened_sl
         )
 
         return widened_sl
