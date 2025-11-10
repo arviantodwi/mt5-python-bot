@@ -9,7 +9,8 @@ from app.domain.models import SymbolMeta
 from app.domain.orders import OrderPlan, OrderResult, Side
 from app.services.risk import RiskService
 
-logger = logging.getLogger(__name__)
+_l = logging.getLogger(__name__)
+exec_logger = logging.LoggerAdapter(_l, extra={"tag": "Execution"})
 
 
 @dataclass
@@ -31,14 +32,23 @@ class ExecutionService:
         symbol = plan.symbol
         meta = self.mt5.get_symbol_meta(symbol)
         if meta is None:
-            logger.warning("Symbol meta not available for %s; skipping order.", symbol)
+            exec_logger.warning("Symbol meta not available for %s; skipping order.", symbol)
             return None
+
+        price_format = f"%.{meta.digits}f"
+        exec_logger.debug(
+            "Received OrderPlan: symbol=%s, side=%s, rr=%.2f, planned_sl=%f",
+            plan.symbol,
+            plan.side.value,
+            plan.rr,
+            price_format % plan.planned_sl,
+        )
 
         # Account & quote
         balance = self.mt5.get_account_balance()
         quote = self.mt5.get_quote(symbol)
         if quote is None:
-            logger.warning("No live quote for %s; skipping order.", symbol)
+            exec_logger.warning("No live quote for %s; skipping order.", symbol)
             return None
 
         entry = quote.ask if plan.side == Side.BUY else quote.bid
@@ -53,7 +63,7 @@ class ExecutionService:
             meta=meta,
         )
         if sl is None:
-            logger.info("SL nudge policy rejected the trade for %s.", symbol)
+            exec_logger.info("SL nudge policy rejected the trade for %s.", symbol)
             return None
 
         # Recompute TP to preserve RR
@@ -64,29 +74,29 @@ class ExecutionService:
         # Compute lot based on risk and actual SL distance
         lot, risk_used = self.risk.compute_lot(balance=balance, entry_price=entry, stop_loss=sl, meta=meta)
         if lot <= 0.0:
-            logger.info("Lot computed as 0 for %s; risk or distances invalid; skipping.", symbol)
+            exec_logger.info("Lot computed as 0 for %s; risk or distances invalid; skipping.", symbol)
             return None
 
         # Send order
         try:
             send_res = self.mt5.send_market_order(symbol=symbol, side=plan.side, volume=lot, sl=sl, tp=tp)
         except Exception as exc:
-            logger.exception("Order send failed for %s: %s", symbol, exc)
+            exec_logger.exception("Order send failed for %s: %s", symbol, exc)
             return None
 
         if send_res is None or send_res.status != "FILLED":
             reason = getattr(send_res, "reason", "UNKNOWN")
-            logger.info("Order rejected for %s: %s", symbol, reason)
+            exec_logger.info("Order rejected for %s: %s", symbol, reason)
             return None
 
-        logger.info(
-            "Order filled | %s %s lot=%s entry=%.10f SL=%.10f TP=%.10f ticket=%s",
-            symbol,
+        exec_logger.info(
+            "%s order filled for %s (lot=%s, entry=%f, SL=%f, TP=%f, ticket=%s)",
             plan.side.value,
+            symbol,
             lot,
-            send_res.entry_price,
-            send_res.stop_loss,
-            send_res.take_profit,
+            price_format % send_res.entry_price,
+            price_format % send_res.stop_loss,
+            price_format % send_res.take_profit,
             send_res.ticket,
         )
 

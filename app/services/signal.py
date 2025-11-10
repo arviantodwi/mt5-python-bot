@@ -10,7 +10,8 @@ from app.domain.models import Candle
 from app.domain.signals import Signal
 from app.domain.strategy import detect_pattern_and_signal
 
-logger = logging.getLogger(__name__)
+_l = logging.getLogger(__name__)
+signal_logger = logging.LoggerAdapter(_l, extra={"tag": "Signal"})
 
 
 @dataclass
@@ -51,7 +52,7 @@ class SignalService:
         if signal:
             # Log at INFO for visibility
             freshness = "LIVE" if signal.is_live else "STALE"
-            logger.info(
+            signal_logger.info(
                 "Signal %s %s at %s (%s)",
                 signal.side.value,
                 signal.symbol,

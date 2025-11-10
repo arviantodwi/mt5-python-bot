@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Deque, Optional
@@ -8,6 +9,9 @@ from app.config.settings import Settings
 from app.domain.indicators import IndicatorsSnapshot
 from app.domain.models import Candle, SymbolMeta
 from app.domain.orders import OrderPlan, Side
+
+_l = logging.getLogger(__name__)
+planner_logger = logging.LoggerAdapter(_l, extra={"tag": "Planner"})
 
 
 @dataclass(frozen=True)
@@ -67,7 +71,7 @@ class OrderPlannerService:
         entry_ref = c4.close if price_ref is None else price_ref
         sl = self._apply_atr_widening(side, sl, entry_ref, indicators, meta)
 
-        return OrderPlan(
+        order_plan = OrderPlan(
             symbol=symbol,
             side=side,
             rr=self.rr,
@@ -76,6 +80,16 @@ class OrderPlannerService:
             signal_time_utc=signal_time_utc,
             source_signal_id=None,
         )
+
+        price_format = f"%.{meta.digits}f"
+        planner_logger.debug(
+            "OrderPlan created: symbol=%s, side=%s, planned_sl=%f",
+            order_plan.symbol,
+            order_plan.side.value,
+            price_format % order_plan.planned_sl,
+        )
+
+        return order_plan
 
     def _apply_atr_widening(
         self,
@@ -115,6 +129,11 @@ class OrderPlannerService:
         # Double-check we didn't accidentally tighten due to rounding (extremely rare)
         if abs(entry_ref - widened_sl) < base_distance:
             return sl  # fallback: keep original
+
+        price_format = f"%.{meta.digits}f"
+        planner_logger.debug(
+            "SL widened by ATR: original_sl=%f, widened_sl=%f", price_format % sl, price_format % widened_sl
+        )
 
         return widened_sl
 

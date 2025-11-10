@@ -16,7 +16,9 @@ from app.services.risk import RiskService
 from app.services.scheduler import SchedulerService
 from app.services.signal import SignalService
 
-logger = logging.getLogger(__name__)
+_l = logging.getLogger(__name__)
+kernel_logger = logging.LoggerAdapter(_l, extra={"tag": "Kernel"})
+indicators_logger = logging.LoggerAdapter(_l, extra={"tag": "Indicators"})
 
 
 def run() -> None:
@@ -28,7 +30,7 @@ def run() -> None:
 
     # Configure logging
     setup_logging(settings.log_level)
-    logger.info("Bootstrapping bot...")
+    kernel_logger.info("Bootstrapping bot...")
 
     try:
         # Initialize MT5
@@ -92,33 +94,27 @@ def run() -> None:
             )
             if warmup_candles:
                 indicators.warmup_with_candles(warmup_candles)
-                logger.info(
-                    "Indicators prewarmed with %d bars | last=%s, since=%s",
+                indicators_logger.info(
+                    "Indicators prewarmed with %d bars (since=%s, last=%s)",
                     len(warmup_candles),
-                    last.time_utc.strftime("%Y-%m-%d %H:%M:%S"),
                     datetime.fromtimestamp(since + 1, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                    last.time_utc.strftime("%Y-%m-%d %H:%M:%S"),
                 )
             else:
-                logger.warning("No warmup candles returned; indicators will warm live.")
+                indicators_logger.warning("No warmup candles returned. Indicators will warm live.")
 
         # Callback for scheduler.
         def on_candle_close():
             # Called once after each TF close within the session window.
             monitor.process_once()
 
-        logger.info("Bootstrap complete.")
+        kernel_logger.info("Bootstrap complete.")
 
         # Run forever, scheduler will automatically handle sleep/session timing
-        logger.info(
-            "Starting scheduler: active Mon to Fri %02d:00 to %02d:00 (%s)",
-            window.start_hour,
-            window.end_hour,
-            window.tz.key,
-        )
         scheduler.run_forever(on_candle_close)
 
     except Exception as e:
-        logger.exception(f"Fatal during bootstrap: {e}")
+        kernel_logger.exception(f"Fatal during bootstrap: {e}")
         # Trigger atexit by raising the error to the process, it will automatically shutdown MT5
         # to prevent a deadlock
         raise
