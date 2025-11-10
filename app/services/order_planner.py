@@ -83,7 +83,7 @@ class OrderPlannerService:
 
         price_format = f"%.{meta.digits}f"
         planner_logger.debug(
-            "OrderPlan created: symbol=%s, side=%s, planned_sl=%s",
+            "Order Plan created: symbol=%s, side=%s, planned_sl=%s",
             order_plan.symbol,
             order_plan.side.value,
             price_format % order_plan.planned_sl,

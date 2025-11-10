@@ -10,7 +10,7 @@ from app.domain.orders import OrderPlan, OrderResult, Side
 from app.services.risk import RiskService
 
 _l = logging.getLogger(__name__)
-exec_logger = logging.LoggerAdapter(_l, extra={"tag": "Execution"})
+exec_logger = logging.LoggerAdapter(_l, extra={"tag": "Executor"})
 
 
 @dataclass
@@ -37,7 +37,7 @@ class ExecutionService:
 
         price_format = f"%.{meta.digits}f"
         exec_logger.debug(
-            "Received OrderPlan: symbol=%s, side=%s, rr=%.2f, planned_sl=%s",
+            "Received Order Plan: symbol=%s, side=%s, rr=%.2f, planned_sl=%s",
             plan.symbol,
             plan.side.value,
             plan.rr,
