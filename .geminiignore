@@ -1,0 +1,9 @@
+.pytest_cache
+.vscode
+logs
+venv
+.coverage
+.coveragerc
+TODO
+*.ipynb
+*.bak
