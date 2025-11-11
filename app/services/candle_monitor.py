@@ -1,7 +1,7 @@
 import logging
 import time
 from collections import deque
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Deque, List, Optional
 
 from app.adapters.mt5_client import MT5Client
@@ -150,9 +150,14 @@ class CandleMonitorService:
                 prev_epoch = seen
 
                 for i in range(HYDRATE_MAX_RETRIES):
+                    prev_candle_time = (
+                        datetime.fromtimestamp(prev_epoch, tz=timezone.utc)
+                        .replace(tzinfo=self._mt5.server_tz)
+                        .strftime("%H:%M:%S")
+                    )
                     candle_logger.debug(
                         "Last closed candle hasn't hydrated yet. Previous closed candle: %s. Retry #%d",
-                        datetime.fromtimestamp(prev_epoch).strftime("%H:%M:%S"),
+                        prev_candle_time,
                         i + 1,
                     )
 
@@ -228,11 +233,13 @@ class CandleMonitorService:
         if self._symbol_digits is None:
             self._symbol_digits = self._mt5.get_symbol_meta(symbol).digits
 
-        server_open_time = candle.time_utc
+        server_open_time = candle.time_utc.astimezone(self._mt5.server_tz)
+        # print(f"{server_open_time=}")
         # Subtract 2 hours for now. DON'T FIX IT YET. It will be fixed later by
         # comparing the real UTC datetime to the server time and compute the offset.
         # Then the offset will be used to normalizing the local time.
-        local_open_time = server_open_time.astimezone(JAKARTA_TZ) - timedelta(hours=2)
+        local_open_time = server_open_time.astimezone(JAKARTA_TZ)
+        # print(f"{local_open_time=}")
 
         d = self._symbol_digits
         ohlc_format = f"%.{d}f"

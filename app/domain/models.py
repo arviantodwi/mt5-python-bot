@@ -18,8 +18,8 @@ class SymbolMeta:
 
 @dataclass(frozen=True)
 class Candle:
-    time_utc: datetime
-    epoch: int
+    time_utc: datetime  # The candle's open time, converted to timezone-aware UTC.
+    epoch: int  # The original, unmodified timestamp (epoch seconds) from the MT5 server (usually UTC+2).
     open: float
     high: float
     low: float
