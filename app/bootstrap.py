@@ -94,11 +94,18 @@ def run() -> None:
             )
             if warmup_candles:
                 indicators.warmup_with_candles(warmup_candles)
+
+                server_time_since = (
+                    datetime.fromtimestamp(since + 1, tz=timezone.utc)
+                    .replace(tzinfo=mt5.server_tz)
+                    .strftime("%Y-%m-%d %H:%M:%S")
+                )
+                server_time_last = last.time_utc.astimezone(mt5.server_tz).strftime("%Y-%m-%d %H:%M:%S")
                 indicators_logger.info(
-                    "Indicators prewarmed with %d bars (since=%s, last=%s)",
+                    "Indicators prewarmed with %d bars (server_time_since=%s, server_time_last=%s)",
                     len(warmup_candles),
-                    datetime.fromtimestamp(since + 1, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-                    last.time_utc.strftime("%Y-%m-%d %H:%M:%S"),
+                    server_time_since,
+                    server_time_last,
                 )
             else:
                 indicators_logger.warning("No warmup candles returned. Indicators will warm live.")

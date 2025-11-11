@@ -45,10 +45,9 @@ class PositionGuardService:
             return False
         return now_utc < (self._last_closed_at_utc + timedelta(minutes=self.freeze_hours * 60))
 
-    def mark_position_closed(self, closed_at_utc: datetime) -> None:
-        self._last_closed_at_utc = (
-            closed_at_utc.replace(tzinfo=timezone.utc) if closed_at_utc.tzinfo is None else closed_at_utc
         )
+    def mark_position_closed(self, closed_at_utc: datetime) -> None:
+        self._last_closed_at_utc = closed_at_utc
         if self.freeze_hours is not None:
             freeze_end_time = self._last_closed_at_utc + timedelta(minutes=self.freeze_hours * 60)
             guard_logger.info(

@@ -5,6 +5,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import List, Literal, Optional
+from zoneinfo import ZoneInfo
 
 import mt5_wrapper as mt5
 from mt5_wrapper import ORDER_TYPE_BUY, ORDER_TYPE_SELL, TRADE_ACTION_DEAL
@@ -83,6 +84,7 @@ class MT5Client:
         self._terminal_path = terminal_path
         self._initialized = False
         self.timeframe = self._TIMEFRAME_FALLBACK
+        self.server_tz: ZoneInfo = ZoneInfo("Etc/GMT-2")  # Default to UTC+2
         atexit.register(self.shutdown)
 
     def initialize(self, symbol: str, timeframe: int, prime_count: Optional[int] = None) -> None:
@@ -107,6 +109,9 @@ class MT5Client:
 
         client_logger.info(f'MT5 initialized and logged in to server "{self._server}" as {login_as}')
 
+        # Determine server timezone
+        self._determine_timezone(symbol)
+
         # Ensure timeframe support
         self._ensure_timeframe(timeframe)
 
@@ -121,6 +126,34 @@ class MT5Client:
         # Nudge the terminal to hydrate history faster at session open
         if prime_count is not None and prime_count > 0:
             self._prime_history(symbol, count=prime_count)
+
+    def _determine_timezone(self, symbol: str) -> None:
+        """
+        Heuristically determines the MT5 server's timezone by comparing its reported
+        tick time with the system's UTC time. The result is stored in self._server_tz.
+        """
+        tick = mt5.symbol_info_tick(symbol)
+        if not tick:
+            client_logger.warning("Could not get tick to determine timezone. Falling back to default.")
+            return
+
+        # We assume the tick is recent. The time from MT5 is a naive timestamp
+        # representing the server's local time.
+        server_time_as_utc = datetime.fromtimestamp(tick.time, tz=timezone.utc)
+        utc_now = datetime.now(timezone.utc)
+
+        # The difference gives us the offset.
+        # We round it to the nearest hour.
+        offset_seconds = (server_time_as_utc - utc_now).total_seconds()
+        offset_hours = round(offset_seconds / 3600.0)
+
+        try:
+            # Construct timezone name like "Etc/GMT-2" for UTC+2
+            tz_name = f"Etc/GMT{-int(offset_hours)}" if offset_hours != 0 else "Etc/GMT"
+            self.server_tz = ZoneInfo(tz_name)
+            client_logger.info(f"Detected MT5 server timezone: {self.server_tz} (approx. UTC{offset_hours:+g})")
+        except Exception:
+            client_logger.warning("Could not determine MT5 server timezone dynamically. Falling back to default.")
 
     def shutdown(self) -> None:
         if self._initialized:
@@ -207,8 +240,9 @@ class MT5Client:
             return None
 
         last_closed = rates[-2]  # Ensure closed bar
-        epoch = int(last_closed["time"])  # MT5 gives POSIX seconds (UTC), already int
-        time_utc = datetime.fromtimestamp(epoch, tz=timezone.utc)
+        epoch = int(last_closed["time"])  # MT5 gives POSIX seconds (usually UTC+2), already int
+        candle_time = datetime.fromtimestamp(epoch, tz=timezone.utc).replace(tzinfo=self.server_tz)  # server time
+        time_utc = candle_time.astimezone(timezone.utc)
 
         return Candle(
             time_utc,
@@ -241,7 +275,10 @@ class MT5Client:
         for rate in rates:
             epoch = int(rate["time"])
             if since_exclusive_epoch < epoch <= until_inclusive_epoch:
-                time_utc = datetime.fromtimestamp(epoch, tz=timezone.utc)
+                candle_time = datetime.fromtimestamp(epoch, tz=timezone.utc).replace(
+                    tzinfo=self.server_tz
+                )  # server time
+                time_utc = candle_time.astimezone(timezone.utc)
                 candles.append(
                     Candle(
                         time_utc,
@@ -262,8 +299,9 @@ class MT5Client:
         info = mt5.symbol_info_tick(symbol)
         if info is None:
             return None
-        # mt5 returns time in seconds since 1970 (broker/server), treat as UTC
-        time_utc = datetime.fromtimestamp(info.time, tz=timezone.utc)
+        time_utc = (
+            datetime.fromtimestamp(info.time, tz=timezone.utc).replace(tzinfo=self.server_tz).astimezone(timezone.utc)
+        )
         return Quote(bid=float(info.bid), ask=float(info.ask), time_utc=time_utc)
 
     def get_account_balance(self) -> float:
@@ -284,7 +322,9 @@ class MT5Client:
                     side=Side.BUY if int(position.type) == 0 else Side.SELL,
                     lot=float(position.volume),
                     price_open=float(position.price_open),
-                    time_utc=datetime.fromtimestamp(int(position.time), tz=timezone.utc),
+                    time_utc=datetime.fromtimestamp(int(position.time), tz=timezone.utc)
+                    .replace(tzinfo=self.server_tz)
+                    .astimezone(timezone.utc),
                     sl=sl_value,
                     tp=tp_value,
                 )
