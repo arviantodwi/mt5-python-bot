@@ -175,13 +175,13 @@ def get_zoneinfo(dt: datetime) -> Optional[ZoneInfo]:
 def humanize_timedelta(delta: timedelta) -> str:
     """
     Converts a datetime.timedelta object into a human-readable string format,
-    including hours, minutes, seconds, and milliseconds.
+    including hours, minutes, and seconds.
 
     Args:
         delta: The timedelta object to convert.
 
     Returns:
-        A formatted string (e.g., "1h 23m 58s 987ms").
+        A formatted string (e.g., "1hr 23min 58sec").
     """
 
     # Get the total seconds as an integer (milliseconds/microseconds excluded)
@@ -191,5 +191,11 @@ def humanize_timedelta(delta: timedelta) -> str:
     minutes, seconds = divmod(total_seconds, 60)
     hours, minutes = divmod(minutes, 60)
 
-    formatted_time = f"{hours}hr {minutes}min {seconds}sec"
+    if hours > 0:
+        formatted_time = f"{hours}hr {minutes}min {seconds}sec"
+    elif hours == 0 and minutes > 0:
+        formatted_time = f"{minutes}min {seconds}sec"
+    else:
+        formatted_time = f"{seconds}sec"
+
     return formatted_time

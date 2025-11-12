@@ -1,7 +1,7 @@
 import logging
 import time
 from collections import deque
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Deque, List, Optional
 
 from app.adapters.mt5_client import MT5Client
@@ -249,6 +249,11 @@ class CandleMonitorService:
         close = ohlc_format % candle.close
         volume = candle.volume
 
+        candle_logger.info(
+            "%s - %s ==========================================================",
+            local_open_time.strftime("%Y-%m-%d %H:%M"),
+            (local_open_time + timedelta(seconds=self._timeframe_sec)).strftime("%H:%M"),
+        )
         candle_logger.info(
             "Candle {} {} closed (server={})".format(
                 symbol,
