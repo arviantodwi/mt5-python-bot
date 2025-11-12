@@ -8,7 +8,7 @@ from app.adapters.mt5_client import MT5Client
 from app.config.settings import Settings
 from app.domain.indicators import IndicatorsSnapshot
 from app.domain.models import Candle
-from app.infra.clock import JAKARTA_TZ
+from app.infra.clock import JAKARTA_TZ, humanize_timedelta
 from app.infra.timeframe import timeframe_to_seconds
 from app.services.execution import ExecutionService
 from app.services.indicators import IndicatorsService
@@ -342,10 +342,16 @@ class CandleMonitorService:
 
             # Guard rails: single open position & freeze window
             if self._guard and self._guard.has_open_position():
-                guard_logger.info("Skip %s signal: position already open.", self._symbol)
+                guard_logger.info("Skip %s signal. Reason: Position already open.", self._symbol)
                 return
-            if self._guard and self._guard.is_in_freeze(datetime.now(timezone.utc)):
-                guard_logger.info("Skip %s signal: in freeze window.", self._symbol)
+            now_utc = datetime.now(timezone.utc)
+            if self._guard and self._guard.is_in_freeze(now_utc):
+                freeze_time_left = self._guard.get_freeze_time_left(now_utc)
+                guard_logger.info(
+                    "Skip %s signal. Reason: In freeze window. Time to unlock: %s",
+                    self._symbol,
+                    humanize_timedelta(freeze_time_left) if freeze_time_left is not None else "Unknown",
+                )
                 return
 
             # Build order plan from the last 4 candles (strategy’s reference window)
@@ -366,7 +372,7 @@ class CandleMonitorService:
                 price_ref=None,
             )
             if not plan:
-                guard_logger.info("Planning rejected %s signal (policy/constraints).", self._symbol)
+                guard_logger.info("Planning rejected %s signal. Reason: Policy/constraints unmet.", self._symbol)
                 return
 
             # Execute market order

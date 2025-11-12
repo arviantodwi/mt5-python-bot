@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, cast
 
 from app.adapters.mt5_client import MT5Client
 from app.config.settings import Settings
@@ -45,7 +45,27 @@ class PositionGuardService:
             return False
         return now_utc < (self._last_closed_at_utc + timedelta(minutes=self.freeze_hours * 60))
 
+    def get_freeze_time_left(self, now_utc: datetime) -> Optional[timedelta]:
+        """
+        Computes the remaining time until the freeze window is unlocked.
+
+        Args:
+            now_utc: The current time in UTC.
+
+        Returns:
+            A timedelta object representing the time left, or None if not in a freeze period.
+        """
+        if not self.is_in_freeze(now_utc):
+            return None
+
+        # It's safe to cast _last_closed_at_utc and freeze_hours now if passing the check above.
+        freeze_end_time = cast(datetime, self._last_closed_at_utc) + timedelta(
+            minutes=cast(float, self.freeze_hours) * 60
         )
+        time_left = freeze_end_time - now_utc
+
+        return time_left if time_left.total_seconds() > 0 else None
+
     def mark_position_closed(self, closed_at_utc: datetime) -> None:
         self._last_closed_at_utc = closed_at_utc
         if self.freeze_hours is not None:
